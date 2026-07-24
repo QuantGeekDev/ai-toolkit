@@ -3,7 +3,7 @@ import { Job } from '@prisma/client';
 import { spawn } from 'child_process';
 import path from 'path';
 import fs from 'fs';
-import { TOOLKIT_ROOT, getTrainingFolder, getHFToken } from '../paths';
+import { TOOLKIT_ROOT, getTrainingFolder, getHFToken, getGeminiAPIKey } from '../paths';
 import { resolvePythonPath } from '../pythonPath';
 const isWindows = process.platform === 'win32';
 
@@ -55,6 +55,8 @@ const startAndWatchJob = (job: Job) => {
     // update the config dataset path
     const jobConfig = JSON.parse(job.job_config);
     jobConfig.config.process[0].sqlite_db_path = path.join(TOOLKIT_ROOT, 'aitk_db.db');
+    const processConfig = jobConfig.config.process[0];
+    const isCloudCaptioner = processConfig.type === 'CloudCaptioner';
 
     // write the config file
     fs.writeFileSync(configPath, JSON.stringify(jobConfig, null, 2));
@@ -76,16 +78,34 @@ const startAndWatchJob = (job: Job) => {
 
     const additionalEnv: any = {
       AITK_JOB_ID: jobID,
+      AITK_JOB_OUTPUT_DIR: trainingFolder,
       CUDA_DEVICE_ORDER: 'PCI_BUS_ID',
-      CUDA_VISIBLE_DEVICES: `${job.gpu_ids}`,
       IS_AI_TOOLKIT_UI: '1',
       PYTHONUNBUFFERED: '1', // write Python output immediately so it is not lost on a crash
     };
+    if (!isCloudCaptioner) {
+      additionalEnv.CUDA_VISIBLE_DEVICES = `${job.gpu_ids}`;
+    }
 
     // HF_TOKEN
     const hfToken = await getHFToken();
     if (hfToken && hfToken.trim() !== '') {
       additionalEnv.HF_TOKEN = hfToken;
+    }
+
+    if (isCloudCaptioner && processConfig.caption?.provider === 'gemini') {
+      const geminiApiKey = await getGeminiAPIKey();
+      if (!geminiApiKey) {
+        const message = 'Gemini API key is not configured. Add it in Settings or set GEMINI_API_KEY.';
+        appendJobLog(logPath, `${message}\n`);
+        await prisma.job.update({
+          where: { id: jobID },
+          data: { status: 'error', info: message, pid: null },
+        });
+        resolve();
+        return;
+      }
+      additionalEnv.GEMINI_API_KEY = geminiApiKey;
     }
 
     const args = [runFilePath, configPath];

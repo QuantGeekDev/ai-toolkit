@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import prisma from '@/server/prisma';
 import { isMac } from '@/helpers/basic';
 import { cached } from '@/server/apiCache';
+import { CLOUD_QUEUE_KEY, isCloudCaptionJob } from '@/helpers/captionExecution';
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
@@ -60,8 +61,15 @@ export async function POST(request: Request) {
     const body = await request.json();
     const { id, name, job_config } = body;
     let gpu_ids: string = body.gpu_ids;
+    const isCloudCaptioner = isCloudCaptionJob(job_config);
 
-    if (isMac()) {
+    if (isCloudCaptioner) {
+      gpu_ids = CLOUD_QUEUE_KEY;
+    } else if (gpu_ids === CLOUD_QUEUE_KEY) {
+      return NextResponse.json({ error: 'The cloud queue is reserved for cloud caption jobs.' }, { status: 400 });
+    }
+
+    if (isMac() && !isCloudCaptioner) {
       gpu_ids = 'mps';
     }
 

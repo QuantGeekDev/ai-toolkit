@@ -281,6 +281,8 @@ export interface CaptionProcessConfig {
   device: string;
   caption: {
     model_name_or_path: string;
+    model?: string;
+    provider?: string;
     model_name_or_path2?: string;
     dtype: string;
     quantize: boolean;
@@ -296,7 +298,17 @@ export interface CaptionProcessConfig {
     fixed_caption?: string;
     caption_extension?: string;
     thinking?: boolean;
-  }
+    concurrency?: number;
+    request_timeout_seconds?: number;
+    max_attempts?: number;
+    max_output_tokens?: number;
+    max_payload_mb?: number;
+    provider_options?: {
+      thinking_level?: 'low' | 'medium' | 'high';
+      media_resolution?: 'low' | 'medium' | 'high' | 'ultra_high';
+      store?: false;
+    };
+  };
 }
 
 export interface CaptionConfigObject {

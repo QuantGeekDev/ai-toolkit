@@ -8,6 +8,7 @@ import threading
 import time
 import signal
 import concurrent.futures
+import tempfile
 from PIL import Image
 
 import torch
@@ -142,11 +143,26 @@ class BaseCaptioner(BaseExtensionProcess):
     def save_caption_for_file(self, file_path: str, caption: str):
         filename_no_ext = os.path.splitext(file_path)[0]
         caption_file_path = f"{filename_no_ext}.{self.caption_config.caption_extension}"
-        # delete it if it already exists
-        if os.path.exists(caption_file_path):
-            os.remove(caption_file_path)
-        with open(caption_file_path, "w", encoding="utf-8") as f:
-            f.write(caption)
+        caption_dir = os.path.dirname(caption_file_path) or "."
+        temp_path = None
+        try:
+            with tempfile.NamedTemporaryFile(
+                "w",
+                encoding="utf-8",
+                dir=caption_dir,
+                prefix=f".{os.path.basename(caption_file_path)}.",
+                suffix=".tmp",
+                delete=False,
+            ) as f:
+                temp_path = f.name
+                f.write(caption)
+                f.flush()
+                os.fsync(f.fileno())
+            os.replace(temp_path, caption_file_path)
+            temp_path = None
+        finally:
+            if temp_path and os.path.exists(temp_path):
+                os.remove(temp_path)
 
     def get_caption_for_file(self, file_path: str) -> str:
         raise NotImplementedError("Captioning not implemented for this captioner")

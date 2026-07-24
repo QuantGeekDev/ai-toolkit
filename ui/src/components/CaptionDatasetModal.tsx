@@ -17,6 +17,9 @@ import CaptionSimpleJob from '@/components/CaptionSimpleJob';
 import AdvancedConfigEditor from '@/components/AdvancedConfigEditor';
 import { SelectInput } from '@/components/formInputs';
 import { Loader2 } from 'lucide-react';
+import useSettings from '@/hooks/useSettings';
+import { captionerTypes } from '@/helpers/captionOptions';
+import { getCaptionQueueKey } from '@/helpers/captionExecution';
 
 export interface CaptionDatasetModalState {
   datasetPath: string;
@@ -53,6 +56,10 @@ export const CaptionDatasetModal: React.FC = () => {
   const open = modalInfo !== null;
   const isSavingRef = useRef(false);
   const [isSaving, setIsSaving] = useState(false);
+  const { settings } = useSettings();
+  const selectedCaptionOption = captionerTypes.find(option => option.name === jobConfig.config.process[0].type);
+  const isCloud = selectedCaptionOption?.executionTarget === 'cloud';
+  const geminiConfigured = settings.GEMINI_API_KEY_CONFIGURED;
   const showGPUSelect = !isMac();
   const isLoadingExistingJob = !!(modalInfo?.jobId || modalInfo?.cloneId) && !hasLoadedExistingJob;
   const showLoadingOverlay = isLoadingExistingJob || isSaving;
@@ -132,12 +139,13 @@ export const CaptionDatasetModal: React.FC = () => {
     setIsSaving(true);
 
     const isEdit = !!modalInfo.jobId;
+    const queueKey = getCaptionQueueKey(jobConfig, gpuIDs);
 
     apiClient
       .post('/api/jobs', {
         id: isEdit ? modalInfo.jobId : null,
         name: isEdit && existingJobName ? existingJobName : uuidv4(),
-        gpu_ids: gpuIDs,
+        gpu_ids: queueKey,
         job_config: jobConfig,
         job_type: 'caption',
         job_ref: modalInfo.datasetPath,
@@ -146,7 +154,7 @@ export const CaptionDatasetModal: React.FC = () => {
         const jobId = res.data.id;
         await startJob(jobId);
         // start the queue as well
-        await startQueue(gpuIDs || '');
+        await startQueue(queueKey);
         isSavingRef.current = false;
         setIsSaving(false);
         handleClose();
@@ -186,7 +194,7 @@ export const CaptionDatasetModal: React.FC = () => {
             Advanced
           </button>
           <div className="flex-1" />
-          {activeTab === 'advanced' && showGPUSelect && (
+          {activeTab === 'advanced' && showGPUSelect && !isCloud && (
             <div className="pb-2">
               <SelectInput
                 value={`${gpuIDs}`}
@@ -210,6 +218,7 @@ export const CaptionDatasetModal: React.FC = () => {
               setGpuIDs={setGpuIDs}
               gpuList={gpuList}
               showGPUSelect={showGPUSelect}
+              geminiConfigured={geminiConfigured}
             />
           ) : (
             <div className="h-[60vh] mt-2">
@@ -227,7 +236,8 @@ export const CaptionDatasetModal: React.FC = () => {
             </button>
             <button
               type="submit"
-              className="rounded-md bg-blue-600 px-4 py-2 text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              disabled={isSaving || (isCloud && !geminiConfigured)}
+              className="rounded-md bg-blue-600 px-4 py-2 text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               Add to Queue
             </button>

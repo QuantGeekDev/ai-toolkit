@@ -1,0 +1,27 @@
+---
+job: extension
+config:
+  name: Caption Directory with Gemini
+  process:
+    - type: CloudCaptioner
+      device: cpu
+      caption:
+        provider: gemini
+        model: gemini-3.1-pro-preview
+        path_to_caption: "C:/path/to/dataset"
+        extensions: [jpg, jpeg, png, bmp, webp]
+        caption_extension: txt
+        recaption: false
+        caption_prompt: >-
+          Caption this image for image-model training. Describe only what is visible,
+          be specific and decisive, transcribe legible text, and return no preamble.
+        concurrency: 2
+        request_timeout_seconds: 120
+        max_attempts: 4
+        max_output_tokens: 2048
+        max_res: 2048
+        max_payload_mb: 15
+        provider_options:
+          thinking_level: high
+          media_resolution: high
+          store: false

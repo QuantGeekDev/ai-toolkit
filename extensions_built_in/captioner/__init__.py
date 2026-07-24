@@ -37,8 +37,20 @@ class Ideogram4CaptionerExtension(Extension):
         return Ideogram4Captioner
 
 
+class CloudCaptionerExtension(Extension):
+    uid = "CloudCaptioner"
+    name = "Cloud API Captioner"
+
+    @classmethod
+    def get_process(cls):
+        from .CloudCaptioner import CloudCaptioner
+
+        return CloudCaptioner
+
+
 AI_TOOLKIT_EXTENSIONS = [
     AceStepCaptionerExtension,
     Qwen3VLCaptionerExtension,
     Ideogram4CaptionerExtension,
+    CloudCaptionerExtension,
 ]

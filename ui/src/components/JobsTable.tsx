@@ -210,8 +210,13 @@ export default function JobsTable({ onlyActive = false, job_type = null }: JobsT
     gpuList.forEach(gpu => {
       jd[`${gpu.index}`] = { name: `${gpu.name}`, jobs: [] };
     });
+    jd['cloud'] = { name: 'Cloud API', jobs: [] };
     jd['Idle'] = { name: 'Idle', jobs: [] };
     jobs.forEach(job => {
+      if (job.gpu_ids === 'cloud' && ['queued', 'running', 'stopping'].includes(job.status)) {
+        jd['cloud'].jobs.push(job);
+        return;
+      }
       const gpu = gpuList.find(gpu => job.gpu_ids?.split(',').includes(gpu.index.toString())) as GpuInfo;
       const key = `${gpu?.index || '0'}`;
       if (['queued', 'running', 'stopping'].includes(job.status) && key in jd) {
@@ -236,7 +241,7 @@ export default function JobsTable({ onlyActive = false, job_type = null }: JobsT
       }
     });
     return jd;
-  }, [jobs, queues, isGPUInfoLoaded]);
+  }, [jobs, queues, isGPUInfoLoaded, gpuList]);
 
   let isLoading = status === 'loading' || queueStatus === 'loading' || !isGPUInfoLoaded;
 
@@ -278,7 +283,11 @@ export default function JobsTable({ onlyActive = false, job_type = null }: JobsT
       )}
       {Object.keys(jobsDict)
         .sort()
-        .filter(key => key !== 'Idle')
+        .filter(
+          key =>
+            key !== 'Idle' &&
+            (key !== 'cloud' || jobsDict[key].jobs.length > 0 || queues.some(q => q.gpu_ids === 'cloud')),
+        )
         .map(gpuKey => {
           const queue = queues.find(q => `${q.gpu_ids}` === gpuKey) as Queue;
           return (
@@ -293,7 +302,7 @@ export default function JobsTable({ onlyActive = false, job_type = null }: JobsT
                 <div className="flex items-center space-x-2 flex-1 min-w-0 py-2">
                   <h2 className="font-semibold text-white truncate">{jobsDict[gpuKey].name}</h2>
                   <span className="px-2 py-0.5 bg-gray-700 rounded-full text-xs text-gray-300 flex-shrink-0">
-                    # {queue?.gpu_ids}
+                    {gpuKey === 'cloud' ? 'Cloud' : `# ${queue?.gpu_ids}`}
                   </span>
                 </div>
                 <div className="text-sm text-gray-300 italic flex items-center flex-shrink-0">

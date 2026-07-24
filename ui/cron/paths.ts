@@ -27,6 +27,9 @@ export const getTrainingFolder = async () => {
 };
 
 export const getHFToken = async () => {
+  if (process.env.HF_TOKEN?.trim()) {
+    return process.env.HF_TOKEN.trim();
+  }
   const key = 'HF_TOKEN';
   let row = await prisma.settings.findFirst({
     where: {
@@ -38,4 +41,12 @@ export const getHFToken = async () => {
     token = row.value;
   }
   return token;
+};
+
+export const getGeminiAPIKey = async () => {
+  if (process.env.GEMINI_API_KEY?.trim()) {
+    return process.env.GEMINI_API_KEY.trim();
+  }
+  const row = await prisma.settings.findFirst({ where: { key: 'GEMINI_API_KEY' } });
+  return row?.value?.trim() || '';
 };

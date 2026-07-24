@@ -23,6 +23,7 @@ timm==1.0.22
 prodigyopt
 controlnet_aux==0.0.10
 python-dotenv
+google-genai>=2.14.0,<3
 bitsandbytes
 hf_transfer
 lpips

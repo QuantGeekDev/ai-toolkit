@@ -15,6 +15,9 @@ interface JobOverviewProps {
 
 export default function JobOverview({ job }: JobOverviewProps) {
   const gpuIds = useMemo(() => {
+    if (job.gpu_ids === 'cloud') {
+      return [];
+    }
     if (job.gpu_ids === 'mps') {
       return [0]; // For MPS, we can just return a single GPU ID since it's virtualized
     }
@@ -24,7 +27,6 @@ export default function JobOverview({ job }: JobOverviewProps) {
   const logRef = useRef<HTMLDivElement>(null);
   // Track whether we should auto-scroll to bottom
   const [isScrolledToBottom, setIsScrolledToBottom] = useState(true);
-  console.log('job.gpu_ids', job.gpu_ids);
   const { gpuList, isGPUInfoLoaded } = useGPUInfo(gpuIds, 5000);
   const { cpuInfo, isCPUInfoLoaded } = useCPUInfo(5000);
   const totalSteps = getTotalSteps(job);
@@ -125,8 +127,10 @@ export default function JobOverview({ job }: JobOverviewProps) {
             <div className="flex items-center space-x-4">
               <Cpu className="w-5 h-5 text-purple-600 dark:text-purple-400" />
               <div>
-                <p className="text-xs text-gray-400">Assigned GPUs</p>
-                <p className="text-sm font-medium text-gray-200">GPUs: {job.gpu_ids}</p>
+                <p className="text-xs text-gray-400">Execution target</p>
+                <p className="text-sm font-medium text-gray-200">
+                  {job.gpu_ids === 'cloud' ? 'Cloud API' : `GPUs: ${job.gpu_ids}`}
+                </p>
               </div>
             </div>
 
@@ -163,7 +167,9 @@ export default function JobOverview({ job }: JobOverviewProps) {
       {/* GPU Widget Panel */}
       <div className="md:col-span-1">
         <div>{isCPUInfoLoaded && cpuInfo && <CPUWidget cpu={cpuInfo} />}</div>
-        <div className="mt-4">{isGPUInfoLoaded && gpuList.length > 0 && <GPUWidget gpu={gpuList[0]} />}</div>
+        <div className="mt-4">
+          {job.gpu_ids !== 'cloud' && isGPUInfoLoaded && gpuList.length > 0 && <GPUWidget gpu={gpuList[0]} />}
+        </div>
         {jobType === 'train' && (
           <div className="mt-4">
             <FilesWidget jobID={job.id} jobName={job.name} />

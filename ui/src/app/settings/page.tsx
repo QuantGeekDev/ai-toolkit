@@ -8,6 +8,8 @@ import { apiClient } from '@/utils/api';
 export default function Settings() {
   const { settings, setSettings } = useSettings();
   const [status, setStatus] = useState<'idle' | 'saving' | 'success' | 'error'>('idle');
+  const [testStatus, setTestStatus] = useState<'idle' | 'testing' | 'success' | 'error'>('idle');
+  const [testMessage, setTestMessage] = useState('');
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -17,6 +19,23 @@ export default function Settings() {
       .post('/api/settings', settings)
       .then(() => {
         setStatus('success');
+        setSettings(prev => ({
+          ...prev,
+          HF_TOKEN: '',
+          GEMINI_API_KEY: '',
+          HF_TOKEN_CONFIGURED: prev.CLEAR_HF_TOKEN ? false : prev.HF_TOKEN_CONFIGURED || Boolean(prev.HF_TOKEN.trim()),
+          GEMINI_API_KEY_CONFIGURED: prev.CLEAR_GEMINI_API_KEY
+            ? false
+            : prev.GEMINI_API_KEY_CONFIGURED || Boolean(prev.GEMINI_API_KEY.trim()),
+          HF_TOKEN_SOURCE: prev.CLEAR_HF_TOKEN ? null : prev.HF_TOKEN.trim() ? 'local' : prev.HF_TOKEN_SOURCE,
+          GEMINI_API_KEY_SOURCE: prev.CLEAR_GEMINI_API_KEY
+            ? null
+            : prev.GEMINI_API_KEY.trim()
+              ? 'local'
+              : prev.GEMINI_API_KEY_SOURCE,
+          CLEAR_HF_TOKEN: false,
+          CLEAR_GEMINI_API_KEY: false,
+        }));
       })
       .catch(error => {
         console.error('Error saving settings:', error);
@@ -27,9 +46,48 @@ export default function Settings() {
       });
   };
 
+  const testGemini = async () => {
+    setTestStatus('testing');
+    setTestMessage('');
+    try {
+      if (settings.GEMINI_API_KEY.trim()) {
+        await apiClient.post('/api/settings', {
+          TRAINING_FOLDER: settings.TRAINING_FOLDER,
+          DATASETS_FOLDER: settings.DATASETS_FOLDER,
+          GEMINI_API_KEY: settings.GEMINI_API_KEY,
+        });
+      }
+      const response = await apiClient.post('/api/settings/providers/gemini/test', {
+        model: 'gemini-3.1-pro-preview',
+      });
+      setTestStatus('success');
+      setTestMessage(`Connected to ${response.data.model}.`);
+      setSettings(prev => ({
+        ...prev,
+        GEMINI_API_KEY: '',
+        GEMINI_API_KEY_CONFIGURED: true,
+        GEMINI_API_KEY_SOURCE: prev.GEMINI_API_KEY_SOURCE === 'environment' ? 'environment' : 'local',
+        CLEAR_GEMINI_API_KEY: false,
+      }));
+    } catch (error: any) {
+      setTestStatus('error');
+      setTestMessage(error.response?.data?.error || 'Gemini connection test failed.');
+    }
+  };
+
+  const secretStatus = (configured: boolean, source: 'environment' | 'local' | null) => {
+    if (!configured) return 'Not configured';
+    return source === 'environment' ? 'Configured by environment variable' : 'Saved locally';
+  };
+
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
-    setSettings(prev => ({ ...prev, [name]: value }));
+    setSettings(prev => ({
+      ...prev,
+      [name]: value,
+      ...(name === 'HF_TOKEN' ? { CLEAR_HF_TOKEN: false } : {}),
+      ...(name === 'GEMINI_API_KEY' ? { CLEAR_GEMINI_API_KEY: false } : {}),
+    }));
   };
 
   return (
@@ -63,9 +121,81 @@ export default function Settings() {
                     name="HF_TOKEN"
                     value={settings.HF_TOKEN}
                     onChange={handleChange}
+                    disabled={settings.HF_TOKEN_SOURCE === 'environment'}
                     className="w-full px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg focus:ring-2 focus:ring-gray-600 focus:border-transparent"
-                    placeholder="Enter your Hugging Face token"
+                    placeholder={
+                      settings.HF_TOKEN_CONFIGURED
+                        ? 'Token is configured; enter a replacement'
+                        : 'Enter your Hugging Face token'
+                    }
                   />
+                  <div className="mt-2 flex items-center justify-between text-xs text-gray-500">
+                    <span>{secretStatus(settings.HF_TOKEN_CONFIGURED, settings.HF_TOKEN_SOURCE)}</span>
+                    {settings.HF_TOKEN_SOURCE === 'local' && (
+                      <button
+                        type="button"
+                        className="text-red-400 hover:text-red-300"
+                        onClick={() => setSettings(prev => ({ ...prev, HF_TOKEN: '', CLEAR_HF_TOKEN: true }))}
+                      >
+                        Clear saved token
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                <div>
+                  <label htmlFor="GEMINI_API_KEY" className="block text-sm font-medium mb-2">
+                    Gemini API Key
+                    <div className="text-gray-500 text-sm ml-1">
+                      Used only by the server-side cloud caption worker. Prefer a restricted authorization key or the{' '}
+                      <code>GEMINI_API_KEY</code> environment variable. Saved keys are stored locally in AI Toolkit's
+                      SQLite database and are not encrypted at rest.
+                    </div>
+                  </label>
+                  <input
+                    type="password"
+                    id="GEMINI_API_KEY"
+                    name="GEMINI_API_KEY"
+                    value={settings.GEMINI_API_KEY}
+                    onChange={handleChange}
+                    disabled={settings.GEMINI_API_KEY_SOURCE === 'environment'}
+                    className="w-full px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg focus:ring-2 focus:ring-gray-600 focus:border-transparent disabled:opacity-60"
+                    placeholder={
+                      settings.GEMINI_API_KEY_CONFIGURED
+                        ? 'Key is configured; enter a replacement'
+                        : 'Enter your Gemini API key'
+                    }
+                  />
+                  <div className="mt-2 flex items-center justify-between text-xs text-gray-500">
+                    <span>{secretStatus(settings.GEMINI_API_KEY_CONFIGURED, settings.GEMINI_API_KEY_SOURCE)}</span>
+                    {settings.GEMINI_API_KEY_SOURCE === 'local' && (
+                      <button
+                        type="button"
+                        className="text-red-400 hover:text-red-300"
+                        onClick={() =>
+                          setSettings(prev => ({ ...prev, GEMINI_API_KEY: '', CLEAR_GEMINI_API_KEY: true }))
+                        }
+                      >
+                        Clear saved key
+                      </button>
+                    )}
+                  </div>
+                  <button
+                    type="button"
+                    disabled={
+                      testStatus === 'testing' ||
+                      (!settings.GEMINI_API_KEY_CONFIGURED && !settings.GEMINI_API_KEY.trim())
+                    }
+                    onClick={testGemini}
+                    className="mt-3 px-3 py-2 bg-gray-700 hover:bg-gray-600 rounded disabled:opacity-50"
+                  >
+                    {testStatus === 'testing' ? 'Testing...' : 'Test Gemini connection'}
+                  </button>
+                  {testMessage && (
+                    <p className={`mt-2 text-sm ${testStatus === 'success' ? 'text-green-500' : 'text-red-500'}`}>
+                      {testMessage}
+                    </p>
+                  )}
                 </div>
 
                 <div>
