@@ -2,6 +2,7 @@ import prisma from '@/server/prisma';
 import { defaultDatasetsFolder, defaultDataRoot } from '@/paths';
 import { defaultTrainFolder } from '@/paths';
 import NodeCache from 'node-cache';
+import fs from 'fs';
 
 const myCache = new NodeCache();
 
@@ -95,6 +96,40 @@ export const getSecretStatus = async (key: 'HF_TOKEN' | 'GEMINI_API_KEY') => {
   return {
     configured: Boolean(row?.value?.trim()),
     source: row?.value?.trim() ? ('local' as const) : null,
+  };
+};
+
+export const getVertexSettings = async () => {
+  const rows = await prisma.settings.findMany({
+    where: {
+      key: { in: ['GOOGLE_CLOUD_PROJECT', 'GOOGLE_CLOUD_LOCATION', 'GOOGLE_APPLICATION_CREDENTIALS'] },
+    },
+  });
+  const stored = Object.fromEntries(rows.map(row => [row.key, row.value.trim()]));
+  const project = process.env.GOOGLE_CLOUD_PROJECT?.trim() || stored.GOOGLE_CLOUD_PROJECT || '';
+  const location = process.env.GOOGLE_CLOUD_LOCATION?.trim() || stored.GOOGLE_CLOUD_LOCATION || 'global';
+  const credentialsFile =
+    process.env.GOOGLE_APPLICATION_CREDENTIALS?.trim() || stored.GOOGLE_APPLICATION_CREDENTIALS || '';
+  return {
+    project,
+    location,
+    credentialsFile,
+    projectSource: process.env.GOOGLE_CLOUD_PROJECT?.trim()
+      ? ('environment' as const)
+      : project
+        ? ('local' as const)
+        : null,
+    locationSource: process.env.GOOGLE_CLOUD_LOCATION?.trim()
+      ? ('environment' as const)
+      : stored.GOOGLE_CLOUD_LOCATION
+        ? ('local' as const)
+        : ('default' as const),
+    credentialsSource: process.env.GOOGLE_APPLICATION_CREDENTIALS?.trim()
+      ? ('environment' as const)
+      : credentialsFile
+        ? ('local' as const)
+        : null,
+    credentialsFileExists: Boolean(credentialsFile && fs.existsSync(credentialsFile)),
   };
 };
 

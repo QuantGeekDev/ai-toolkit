@@ -304,6 +304,9 @@ export interface CaptionProcessConfig {
     max_output_tokens?: number;
     max_payload_mb?: number;
     provider_options?: {
+      backend?: 'developer' | 'vertex';
+      project?: string;
+      location?: string;
       thinking_level?: 'low' | 'medium' | 'high';
       media_resolution?: 'low' | 'medium' | 'high' | 'ultra_high';
       store?: false;

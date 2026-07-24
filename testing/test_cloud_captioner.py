@@ -3,6 +3,7 @@ import tempfile
 import threading
 import time
 import unittest
+from unittest.mock import patch
 from types import SimpleNamespace
 
 from PIL import Image
@@ -91,6 +92,14 @@ class CloudCaptionConfigTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "thinking_level"):
                 CloudCaptionConfig(path_to_caption=folder, provider_options={"thinking_budget": 1000})
 
+    def test_rejects_adc_credentials_in_job_config(self):
+        with tempfile.TemporaryDirectory() as folder:
+            with self.assertRaisesRegex(ValueError, "Credentials"):
+                CloudCaptionConfig(
+                    path_to_caption=folder,
+                    provider_options={"credentials_file": "C:/secret/adc.json"},
+                )
+
 
 class GeminiProviderTests(unittest.TestCase):
     def make_provider(self, responses, **kwargs):
@@ -111,6 +120,7 @@ class GeminiProviderTests(unittest.TestCase):
         self.assertEqual(result.caption, "A café sign 日本語")
         self.assertEqual(result.request_id, "request-123")
         self.assertEqual(result.usage.thoughts_tokens, 30)
+        self.assertEqual(result.metadata["backend"], "developer")
         call = client.models.calls[0]
         self.assertEqual(call["model"], "gemini-3.1-pro-preview")
         self.assertEqual(call["config"].thinking_config.thinking_level.value, "HIGH")
@@ -140,6 +150,55 @@ class GeminiProviderTests(unittest.TestCase):
     def test_invalid_reasoning_level_fails_before_request(self):
         with self.assertRaises(ProviderConfigurationError):
             GeminiCaptionProvider(model="model", thinking_level="maximum", client=FakeClient([]))
+
+    def test_vertex_backend_uses_enterprise_client_project_global_and_v1(self):
+        fake_client = FakeClient([])
+        with patch("google.genai.Client", return_value=fake_client) as client_factory:
+            provider = GeminiCaptionProvider(
+                model="gemini-3.1-pro-preview",
+                backend="vertex",
+                project="billing-project-123",
+                location="global",
+            )
+        kwargs = client_factory.call_args.kwargs
+        self.assertTrue(kwargs["enterprise"])
+        self.assertEqual(kwargs["project"], "billing-project-123")
+        self.assertEqual(kwargs["location"], "global")
+        self.assertEqual(kwargs["http_options"].api_version, "v1")
+        provider.close()
+        self.assertTrue(fake_client.closed)
+
+    def test_vertex_backend_records_billing_route_in_result_metadata(self):
+        provider, _ = self.make_provider(
+            [response('{"caption":"Vertex caption"}')],
+            backend="vertex",
+            project="billing-project-123",
+            location="global",
+        )
+        result = provider.caption(CaptionRequest(b"image", "image/jpeg", "Caption it", "fixture.jpg"))
+        self.assertEqual(result.metadata["backend"], "vertex")
+        self.assertEqual(result.metadata["project"], "billing-project-123")
+        self.assertEqual(result.metadata["location"], "global")
+
+    def test_vertex_requires_project_and_global_for_gemini_31_pro(self):
+        with self.assertRaisesRegex(ProviderConfigurationError, "project"):
+            GeminiCaptionProvider(
+                model="gemini-3.1-pro-preview",
+                backend="vertex",
+                client=FakeClient([]),
+            )
+        with self.assertRaisesRegex(ProviderConfigurationError, "global"):
+            GeminiCaptionProvider(
+                model="gemini-3.1-pro-preview",
+                backend="vertex",
+                project="billing-project-123",
+                location="us-central1",
+                client=FakeClient([]),
+            )
+
+    def test_unknown_backend_is_rejected(self):
+        with self.assertRaisesRegex(ProviderConfigurationError, "backend"):
+            GeminiCaptionProvider(model="model", backend="mystery", client=FakeClient([]))
 
 
 class ImagePreparationTests(unittest.TestCase):

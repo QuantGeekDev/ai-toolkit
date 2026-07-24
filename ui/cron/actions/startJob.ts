@@ -3,7 +3,7 @@ import { Job } from '@prisma/client';
 import { spawn } from 'child_process';
 import path from 'path';
 import fs from 'fs';
-import { TOOLKIT_ROOT, getTrainingFolder, getHFToken, getGeminiAPIKey } from '../paths';
+import { TOOLKIT_ROOT, getTrainingFolder, getHFToken, getGeminiAPIKey, getVertexSettings } from '../paths';
 import { resolvePythonPath } from '../pythonPath';
 const isWindows = process.platform === 'win32';
 
@@ -57,6 +57,55 @@ const startAndWatchJob = (job: Job) => {
     jobConfig.config.process[0].sqlite_db_path = path.join(TOOLKIT_ROOT, 'aitk_db.db');
     const processConfig = jobConfig.config.process[0];
     const isCloudCaptioner = processConfig.type === 'CloudCaptioner';
+    const providerOptions = (processConfig.caption.provider_options ||= {});
+    const geminiBackend = String(providerOptions.backend || 'developer')
+      .trim()
+      .toLowerCase()
+      .replace(/-/g, '_');
+    const isVertexGemini =
+      isCloudCaptioner &&
+      processConfig.caption?.provider === 'gemini' &&
+      ['vertex', 'vertex_ai', 'enterprise'].includes(geminiBackend);
+    const vertexSettings = isVertexGemini ? await getVertexSettings() : null;
+
+    if (isVertexGemini) {
+      providerOptions.backend = 'vertex';
+      providerOptions.project = String(providerOptions.project || vertexSettings?.project || '').trim();
+      providerOptions.location = String(providerOptions.location || vertexSettings?.location || 'global').trim();
+      let configurationError = '';
+      if (!providerOptions.project) configurationError = 'Vertex AI project is not configured.';
+      else if (!vertexSettings?.credentialsFile)
+        configurationError = 'Vertex AI ADC credentials file is not configured.';
+      else if (!fs.existsSync(vertexSettings.credentialsFile))
+        configurationError = 'Vertex AI ADC credentials file does not exist.';
+      else {
+        try {
+          const adc = JSON.parse(fs.readFileSync(vertexSettings.credentialsFile, 'utf8'));
+          const quotaProject = String(adc?.quota_project_id || '').trim();
+          if (quotaProject && quotaProject !== providerOptions.project) {
+            configurationError = `ADC quota project '${quotaProject}' does not match Vertex project '${providerOptions.project}'.`;
+          }
+        } catch {
+          configurationError = 'Vertex AI ADC credentials file is not valid readable JSON.';
+        }
+      }
+      if (
+        !configurationError &&
+        processConfig.caption.model === 'gemini-3.1-pro-preview' &&
+        providerOptions.location !== 'global'
+      ) {
+        configurationError = 'gemini-3.1-pro-preview requires the global Vertex AI endpoint.';
+      }
+      if (configurationError) {
+        appendJobLog(logPath, `${configurationError}\n`);
+        await prisma.job.update({
+          where: { id: jobID },
+          data: { status: 'error', info: configurationError, pid: null },
+        });
+        resolve();
+        return;
+      }
+    }
 
     // write the config file
     fs.writeFileSync(configPath, JSON.stringify(jobConfig, null, 2));
@@ -94,18 +143,25 @@ const startAndWatchJob = (job: Job) => {
     }
 
     if (isCloudCaptioner && processConfig.caption?.provider === 'gemini') {
-      const geminiApiKey = await getGeminiAPIKey();
-      if (!geminiApiKey) {
-        const message = 'Gemini API key is not configured. Add it in Settings or set GEMINI_API_KEY.';
-        appendJobLog(logPath, `${message}\n`);
-        await prisma.job.update({
-          where: { id: jobID },
-          data: { status: 'error', info: message, pid: null },
-        });
-        resolve();
-        return;
+      if (isVertexGemini && vertexSettings) {
+        additionalEnv.GOOGLE_APPLICATION_CREDENTIALS = vertexSettings.credentialsFile;
+        additionalEnv.GOOGLE_CLOUD_PROJECT = providerOptions.project;
+        additionalEnv.GOOGLE_CLOUD_LOCATION = providerOptions.location;
+        additionalEnv.GOOGLE_GENAI_USE_VERTEXAI = 'true';
+      } else {
+        const geminiApiKey = await getGeminiAPIKey();
+        if (!geminiApiKey) {
+          const message = 'Gemini API key is not configured. Add it in Settings or set GEMINI_API_KEY.';
+          appendJobLog(logPath, `${message}\n`);
+          await prisma.job.update({
+            where: { id: jobID },
+            data: { status: 'error', info: message, pid: null },
+          });
+          resolve();
+          return;
+        }
+        additionalEnv.GEMINI_API_KEY = geminiApiKey;
       }
-      additionalEnv.GEMINI_API_KEY = geminiApiKey;
     }
 
     const args = [runFilePath, configPath];

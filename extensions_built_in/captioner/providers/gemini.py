@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import unicodedata
 from typing import Any
 
@@ -27,6 +28,9 @@ class GeminiCaptionProvider:
         self,
         *,
         model: str,
+        backend: str = "developer",
+        project: str | None = None,
+        location: str | None = None,
         thinking_level: str = "high",
         media_resolution: str = "high",
         max_output_tokens: int = 2048,
@@ -36,6 +40,9 @@ class GeminiCaptionProvider:
         client: Any | None = None,
     ):
         self.model = model.strip()
+        self.backend = self._normalize_backend(backend)
+        self.project = (project or os.environ.get("GOOGLE_CLOUD_PROJECT", "")).strip()
+        self.location = (location or os.environ.get("GOOGLE_CLOUD_LOCATION", "global")).strip()
         self.thinking_level = thinking_level.lower()
         self.media_resolution = media_resolution.lower()
         self.max_output_tokens = max_output_tokens
@@ -43,10 +50,32 @@ class GeminiCaptionProvider:
         self.request_timeout_seconds = request_timeout_seconds
         self._owns_client = client is None
         self._client = client
-        self._api_key = api_key or os.environ.get("GEMINI_API_KEY", "")
+        self._api_key = (
+            api_key or os.environ.get("GEMINI_API_KEY", "")
+            if self.backend == "developer"
+            else ""
+        )
         self.validate_configuration()
         if self._client is None:
             self._client = self._build_client()
+
+    @staticmethod
+    def _normalize_backend(backend: str | None) -> str:
+        value = str(backend or "developer").strip().lower().replace("-", "_")
+        aliases = {
+            "developer": "developer",
+            "developer_api": "developer",
+            "gemini_api": "developer",
+            "vertex": "vertex",
+            "vertex_ai": "vertex",
+            "enterprise": "vertex",
+        }
+        normalized = aliases.get(value)
+        if normalized is None:
+            raise ProviderConfigurationError(
+                "Gemini backend must be developer or vertex"
+            )
+        return normalized
 
     def validate_configuration(self) -> None:
         if not self.model:
@@ -63,10 +92,31 @@ class GeminiCaptionProvider:
             raise ProviderConfigurationError("max_attempts must be between 1 and 6")
         if not 10 <= self.request_timeout_seconds <= 600:
             raise ProviderConfigurationError("request_timeout_seconds must be between 10 and 600")
-        if self._client is None and not self._api_key.strip():
+        if self.backend == "developer" and self._client is None and not self._api_key.strip():
             raise ProviderConfigurationError(
                 "Gemini API key is not configured. Set GEMINI_API_KEY or save it in Settings."
             )
+        if self.backend == "vertex":
+            if not self.project:
+                raise ProviderConfigurationError(
+                    "Vertex AI project is required. Set provider_options.project or GOOGLE_CLOUD_PROJECT."
+                )
+            if not re.fullmatch(r"[a-z][a-z0-9-]{4,28}[a-z0-9]", self.project):
+                raise ProviderConfigurationError(
+                    "Vertex AI project must be a valid Google Cloud project ID"
+                )
+            if not self.location:
+                raise ProviderConfigurationError(
+                    "Vertex AI location is required. Use global for Gemini 3.1 Pro Preview."
+                )
+            if not re.fullmatch(r"[a-z0-9-]{1,63}", self.location):
+                raise ProviderConfigurationError(
+                    "Vertex AI location may contain only lowercase letters, numbers, and hyphens"
+                )
+            if self.model == "gemini-3.1-pro-preview" and self.location != "global":
+                raise ProviderConfigurationError(
+                    "gemini-3.1-pro-preview is only available through the global Vertex AI endpoint"
+                )
 
     def _build_client(self):
         try:
@@ -85,13 +135,19 @@ class GeminiCaptionProvider:
             jitter=1.0,
             http_status_codes=[408, 429, 500, 502, 503, 504],
         )
-        return genai.Client(
-            api_key=self._api_key,
-            http_options=types.HttpOptions(
-                timeout=self.request_timeout_seconds * 1000,
-                retry_options=retry_options,
-            ),
+        http_options = types.HttpOptions(
+            api_version="v1" if self.backend == "vertex" else None,
+            timeout=self.request_timeout_seconds * 1000,
+            retry_options=retry_options,
         )
+        if self.backend == "vertex":
+            return genai.Client(
+                enterprise=True,
+                project=self.project,
+                location=self.location,
+                http_options=http_options,
+            )
+        return genai.Client(api_key=self._api_key, http_options=http_options)
 
     def _generation_config(self, max_output_tokens: int):
         from google.genai import types
@@ -196,6 +252,10 @@ class GeminiCaptionProvider:
         if self._api_key:
             message = message.replace(self._api_key, "[REDACTED]")
         safe_message = message[:500]
+        if code in {401, 403} and self.backend == "vertex":
+            return ProviderAuthenticationError(
+                "Vertex AI rejected the ADC credentials or they lack access to the configured project/model"
+            )
         if code in {401, 403}:
             return ProviderAuthenticationError(
                 "Gemini rejected the API key or it lacks access to the selected model"
@@ -234,6 +294,10 @@ class GeminiCaptionProvider:
                 request_id=self._request_id(response),
                 usage=self._usage(response),
                 attempts=attempts,
+                metadata={
+                    "backend": self.backend,
+                    **({"project": self.project, "location": self.location} if self.backend == "vertex" else {}),
+                },
             )
         except (
             ProviderConfigurationError,

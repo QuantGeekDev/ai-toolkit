@@ -25,7 +25,10 @@ type Props = {
   setGpuIDs: (value: string | null) => void;
   gpuList: any;
   showGPUSelect: boolean;
-  geminiConfigured: boolean;
+  geminiApiKeyConfigured: boolean;
+  vertexConfigured: boolean;
+  vertexProject: string;
+  vertexLocation: string;
 };
 
 const CaptionSimpleJob: React.FC<Props> = ({
@@ -35,13 +38,22 @@ const CaptionSimpleJob: React.FC<Props> = ({
   setGpuIDs,
   gpuList,
   showGPUSelect,
-  geminiConfigured,
+  geminiApiKeyConfigured,
+  vertexConfigured,
+  vertexProject,
+  vertexLocation,
 }) => {
   const selectedCaptionOption = captionerTypes.find(option => option.name === jobConfig.config.process[0].type);
   const isCloud = selectedCaptionOption?.executionTarget === 'cloud';
   const additionalSections = selectedCaptionOption?.additionalSections || [];
   const minNewTokens = selectedCaptionOption?.minNewTokens ?? 0;
   const newTokensOptions = maxNewTokensOptions.filter(option => parseInt(option.value) >= minNewTokens);
+  const cloudBackend = jobConfig.config.process[0].caption.provider_options?.backend || 'developer';
+  const effectiveVertexProject = jobConfig.config.process[0].caption.provider_options?.project || vertexProject;
+  const effectiveVertexLocation =
+    jobConfig.config.process[0].caption.provider_options?.location || vertexLocation || 'global';
+  const cloudConfigured =
+    cloudBackend === 'vertex' ? vertexConfigured && Boolean(effectiveVertexProject) : geminiApiKeyConfigured;
 
   return (
     <div className="text-sm text-gray-400">
@@ -88,6 +100,27 @@ const CaptionSimpleJob: React.FC<Props> = ({
       {isCloud && (
         <>
           <div className="mt-4">
+            <SelectInput
+              label="Google Backend"
+              value={cloudBackend}
+              onChange={value => {
+                setJobConfig(value, 'config.process[0].caption.provider_options.backend');
+                if (value === 'vertex') {
+                  if (!jobConfig.config.process[0].caption.provider_options?.project && vertexProject) {
+                    setJobConfig(vertexProject, 'config.process[0].caption.provider_options.project');
+                  }
+                  if (!jobConfig.config.process[0].caption.provider_options?.location) {
+                    setJobConfig(vertexLocation || 'global', 'config.process[0].caption.provider_options.location');
+                  }
+                }
+              }}
+              options={[
+                { value: 'developer', label: 'Gemini Developer API (API key)' },
+                { value: 'vertex', label: 'Vertex AI / Gemini Enterprise (ADC + GCP billing)' },
+              ]}
+            />
+          </div>
+          <div className="mt-4">
             <CreatableSelectInput
               label="Provider Model"
               value={jobConfig.config.process[0].caption.model || 'gemini-3.1-pro-preview'}
@@ -99,15 +132,35 @@ const CaptionSimpleJob: React.FC<Props> = ({
               required
             />
           </div>
+          {cloudBackend === 'vertex' && (
+            <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
+              <TextInput
+                label="Billing Project"
+                value={effectiveVertexProject}
+                onChange={value => setJobConfig(value.trim(), 'config.process[0].caption.provider_options.project')}
+                placeholder="my-google-cloud-project"
+              />
+              <TextInput
+                label="Vertex Location"
+                value={effectiveVertexLocation}
+                onChange={value =>
+                  setJobConfig(value.trim().toLowerCase(), 'config.process[0].caption.provider_options.location')
+                }
+                placeholder="global"
+              />
+            </div>
+          )}
           <div
-            className={`mt-3 rounded border p-3 ${geminiConfigured ? 'border-green-900 bg-green-950/30' : 'border-orange-900 bg-orange-950/30'}`}
+            className={`mt-3 rounded border p-3 ${cloudConfigured ? 'border-green-900 bg-green-950/30' : 'border-orange-900 bg-orange-950/30'}`}
           >
-            <p className={geminiConfigured ? 'text-green-400' : 'text-orange-400'}>
-              Gemini API key: {geminiConfigured ? 'configured' : 'not configured in Settings'}
+            <p className={cloudConfigured ? 'text-green-400' : 'text-orange-400'}>
+              {cloudBackend === 'vertex'
+                ? `Vertex AI: ${cloudConfigured ? `configured for ${effectiveVertexProject}` : 'not configured in Settings'}`
+                : `Gemini API key: ${geminiApiKeyConfigured ? 'configured' : 'not configured in Settings'}`}
             </p>
             <p className="mt-1 text-xs text-gray-500">
-              Images are sent to Google for processing and may incur API charges. Credentials stay server-side and are
-              never saved in this job.
+              Images are sent to Google for processing and may incur API charges. Credentials stay server-side. Vertex
+              jobs record the project and location so their billing route is auditable.
             </p>
           </div>
         </>

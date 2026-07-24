@@ -70,6 +70,8 @@ class CloudCaptionConfig:
             for key in normalized_keys
             if key in {"api_key", "apikey", "key", "token", "credential", "secret"}
             or key.endswith("_api_key")
+            or "credential" in key
+            or key in {"adc_path", "google_application_credentials"}
         }
         if forbidden:
             raise ValueError("Credentials are not allowed in job configuration")
@@ -102,6 +104,9 @@ class CloudCaptioner(BaseCaptioner):
         self.provider = create_provider(
             self.caption_config.provider,
             model=self.caption_config.model,
+            backend=options.get("backend", "developer"),
+            project=options.get("project"),
+            location=options.get("location"),
             thinking_level=options.get("thinking_level", "high"),
             media_resolution=options.get("media_resolution", "high"),
             max_output_tokens=self.caption_config.max_output_tokens,

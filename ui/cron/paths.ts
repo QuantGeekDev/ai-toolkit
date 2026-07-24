@@ -50,3 +50,17 @@ export const getGeminiAPIKey = async () => {
   const row = await prisma.settings.findFirst({ where: { key: 'GEMINI_API_KEY' } });
   return row?.value?.trim() || '';
 };
+
+export const getVertexSettings = async () => {
+  const rows = await prisma.settings.findMany({
+    where: {
+      key: { in: ['GOOGLE_CLOUD_PROJECT', 'GOOGLE_CLOUD_LOCATION', 'GOOGLE_APPLICATION_CREDENTIALS'] },
+    },
+  });
+  const stored = Object.fromEntries(rows.map(row => [row.key, row.value.trim()]));
+  return {
+    project: process.env.GOOGLE_CLOUD_PROJECT?.trim() || stored.GOOGLE_CLOUD_PROJECT || '',
+    location: process.env.GOOGLE_CLOUD_LOCATION?.trim() || stored.GOOGLE_CLOUD_LOCATION || 'global',
+    credentialsFile: process.env.GOOGLE_APPLICATION_CREDENTIALS?.trim() || stored.GOOGLE_APPLICATION_CREDENTIALS || '',
+  };
+};

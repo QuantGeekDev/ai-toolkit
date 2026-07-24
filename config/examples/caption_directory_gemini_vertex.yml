@@ -1,7 +1,7 @@
 ---
 job: extension
 config:
-  name: Caption Directory with Gemini
+  name: Caption Directory with Gemini on Vertex AI
   process:
     - type: CloudCaptioner
       device: cpu
@@ -22,7 +22,9 @@ config:
         max_res: 2048
         max_payload_mb: 15
         provider_options:
-          backend: developer
+          backend: vertex
+          project: your-google-cloud-project-id
+          location: global
           thinking_level: high
           media_resolution: high
           store: false

@@ -60,6 +60,7 @@ export const captionerTypes: CaptionOption[] = [
       'config.process[0].caption.max_payload_mb': [15, undefined],
       'config.process[0].caption.provider_options': [
         {
+          backend: 'developer',
           thinking_level: 'high',
           media_resolution: 'high',
           store: false,

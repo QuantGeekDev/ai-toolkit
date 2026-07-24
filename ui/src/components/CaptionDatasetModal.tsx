@@ -59,7 +59,12 @@ export const CaptionDatasetModal: React.FC = () => {
   const { settings } = useSettings();
   const selectedCaptionOption = captionerTypes.find(option => option.name === jobConfig.config.process[0].type);
   const isCloud = selectedCaptionOption?.executionTarget === 'cloud';
-  const geminiConfigured = settings.GEMINI_API_KEY_CONFIGURED;
+  const cloudBackend = jobConfig.config.process[0].caption.provider_options?.backend || 'developer';
+  const cloudConfigured =
+    cloudBackend === 'vertex'
+      ? settings.VERTEX_CONFIGURED &&
+        Boolean(jobConfig.config.process[0].caption.provider_options?.project || settings.GOOGLE_CLOUD_PROJECT)
+      : settings.GEMINI_API_KEY_CONFIGURED;
   const showGPUSelect = !isMac();
   const isLoadingExistingJob = !!(modalInfo?.jobId || modalInfo?.cloneId) && !hasLoadedExistingJob;
   const showLoadingOverlay = isLoadingExistingJob || isSaving;
@@ -218,7 +223,10 @@ export const CaptionDatasetModal: React.FC = () => {
               setGpuIDs={setGpuIDs}
               gpuList={gpuList}
               showGPUSelect={showGPUSelect}
-              geminiConfigured={geminiConfigured}
+              geminiApiKeyConfigured={settings.GEMINI_API_KEY_CONFIGURED}
+              vertexConfigured={settings.VERTEX_CONFIGURED}
+              vertexProject={settings.GOOGLE_CLOUD_PROJECT}
+              vertexLocation={settings.GOOGLE_CLOUD_LOCATION}
             />
           ) : (
             <div className="h-[60vh] mt-2">
@@ -236,7 +244,7 @@ export const CaptionDatasetModal: React.FC = () => {
             </button>
             <button
               type="submit"
-              disabled={isSaving || (isCloud && !geminiConfigured)}
+              disabled={isSaving || (isCloud && !cloudConfigured)}
               className="rounded-md bg-blue-600 px-4 py-2 text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               Add to Queue

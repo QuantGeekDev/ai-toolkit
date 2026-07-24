@@ -9,6 +9,7 @@ export default function Settings() {
   const { settings, setSettings } = useSettings();
   const [status, setStatus] = useState<'idle' | 'saving' | 'success' | 'error'>('idle');
   const [testStatus, setTestStatus] = useState<'idle' | 'testing' | 'success' | 'error'>('idle');
+  const [testBackend, setTestBackend] = useState<'developer' | 'vertex' | null>(null);
   const [testMessage, setTestMessage] = useState('');
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -35,6 +36,26 @@ export default function Settings() {
               : prev.GEMINI_API_KEY_SOURCE,
           CLEAR_HF_TOKEN: false,
           CLEAR_GEMINI_API_KEY: false,
+          GOOGLE_CLOUD_PROJECT_SOURCE:
+            prev.GOOGLE_CLOUD_PROJECT_SOURCE === 'environment'
+              ? 'environment'
+              : prev.GOOGLE_CLOUD_PROJECT.trim()
+                ? 'local'
+                : null,
+          GOOGLE_CLOUD_LOCATION_SOURCE:
+            prev.GOOGLE_CLOUD_LOCATION_SOURCE === 'environment'
+              ? 'environment'
+              : prev.GOOGLE_CLOUD_LOCATION.trim()
+                ? 'local'
+                : 'default',
+          GOOGLE_APPLICATION_CREDENTIALS_SOURCE:
+            prev.GOOGLE_APPLICATION_CREDENTIALS_SOURCE === 'environment'
+              ? 'environment'
+              : prev.GOOGLE_APPLICATION_CREDENTIALS.trim()
+                ? 'local'
+                : null,
+          VERTEX_ADC_CONFIGURED: Boolean(prev.GOOGLE_APPLICATION_CREDENTIALS.trim()),
+          VERTEX_CONFIGURED: Boolean(prev.GOOGLE_CLOUD_PROJECT.trim() && prev.GOOGLE_APPLICATION_CREDENTIALS.trim()),
         }));
       })
       .catch(error => {
@@ -46,28 +67,35 @@ export default function Settings() {
       });
   };
 
-  const testGemini = async () => {
+  const testGemini = async (backend: 'developer' | 'vertex') => {
     setTestStatus('testing');
+    setTestBackend(backend);
     setTestMessage('');
     try {
-      if (settings.GEMINI_API_KEY.trim()) {
-        await apiClient.post('/api/settings', {
-          TRAINING_FOLDER: settings.TRAINING_FOLDER,
-          DATASETS_FOLDER: settings.DATASETS_FOLDER,
-          GEMINI_API_KEY: settings.GEMINI_API_KEY,
-        });
-      }
+      await apiClient.post('/api/settings', settings);
       const response = await apiClient.post('/api/settings/providers/gemini/test', {
+        backend,
         model: 'gemini-3.1-pro-preview',
       });
       setTestStatus('success');
-      setTestMessage(`Connected to ${response.data.model}.`);
+      setTestMessage(
+        backend === 'vertex'
+          ? `Connected through Vertex AI project ${response.data.project} (${response.data.location}); ADC quota project ${response.data.quotaProject}.`
+          : `Connected to ${response.data.model} through the Gemini Developer API.`,
+      );
       setSettings(prev => ({
         ...prev,
         GEMINI_API_KEY: '',
-        GEMINI_API_KEY_CONFIGURED: true,
-        GEMINI_API_KEY_SOURCE: prev.GEMINI_API_KEY_SOURCE === 'environment' ? 'environment' : 'local',
+        GEMINI_API_KEY_CONFIGURED: backend === 'developer' ? true : prev.GEMINI_API_KEY_CONFIGURED,
+        GEMINI_API_KEY_SOURCE:
+          backend === 'developer'
+            ? prev.GEMINI_API_KEY_SOURCE === 'environment'
+              ? 'environment'
+              : 'local'
+            : prev.GEMINI_API_KEY_SOURCE,
         CLEAR_GEMINI_API_KEY: false,
+        VERTEX_ADC_CONFIGURED: backend === 'vertex' ? true : prev.VERTEX_ADC_CONFIGURED,
+        VERTEX_CONFIGURED: backend === 'vertex' ? true : prev.VERTEX_CONFIGURED,
       }));
     } catch (error: any) {
       setTestStatus('error');
@@ -186,12 +214,80 @@ export default function Settings() {
                       testStatus === 'testing' ||
                       (!settings.GEMINI_API_KEY_CONFIGURED && !settings.GEMINI_API_KEY.trim())
                     }
-                    onClick={testGemini}
+                    onClick={() => testGemini('developer')}
                     className="mt-3 px-3 py-2 bg-gray-700 hover:bg-gray-600 rounded disabled:opacity-50"
                   >
-                    {testStatus === 'testing' ? 'Testing...' : 'Test Gemini connection'}
+                    {testStatus === 'testing' && testBackend === 'developer' ? 'Testing...' : 'Test Developer API'}
                   </button>
-                  {testMessage && (
+                  {testMessage && testBackend === 'developer' && (
+                    <p className={`mt-2 text-sm ${testStatus === 'success' ? 'text-green-500' : 'text-red-500'}`}>
+                      {testMessage}
+                    </p>
+                  )}
+                </div>
+
+                <div className="rounded-lg border border-gray-700 p-4">
+                  <h2 className="text-sm font-medium text-gray-200">Vertex AI / Gemini Enterprise</h2>
+                  <p className="mt-1 text-sm text-gray-500">
+                    Uses Application Default Credentials and bills the Google Cloud project below. Gemini 3.1 Pro
+                    Preview requires the <code>global</code> endpoint.
+                  </p>
+                  <label htmlFor="GOOGLE_CLOUD_PROJECT" className="mt-4 block text-sm font-medium">
+                    Google Cloud Project ID
+                  </label>
+                  <input
+                    type="text"
+                    id="GOOGLE_CLOUD_PROJECT"
+                    name="GOOGLE_CLOUD_PROJECT"
+                    value={settings.GOOGLE_CLOUD_PROJECT}
+                    onChange={handleChange}
+                    disabled={settings.GOOGLE_CLOUD_PROJECT_SOURCE === 'environment'}
+                    className="mt-2 w-full px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg focus:ring-2 focus:ring-gray-600 focus:border-transparent disabled:opacity-60"
+                    placeholder="my-google-cloud-project"
+                  />
+                  <label htmlFor="GOOGLE_CLOUD_LOCATION" className="mt-4 block text-sm font-medium">
+                    Vertex Location
+                  </label>
+                  <input
+                    type="text"
+                    id="GOOGLE_CLOUD_LOCATION"
+                    name="GOOGLE_CLOUD_LOCATION"
+                    value={settings.GOOGLE_CLOUD_LOCATION}
+                    onChange={handleChange}
+                    disabled={settings.GOOGLE_CLOUD_LOCATION_SOURCE === 'environment'}
+                    className="mt-2 w-full px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg focus:ring-2 focus:ring-gray-600 focus:border-transparent disabled:opacity-60"
+                    placeholder="global"
+                  />
+                  <label htmlFor="GOOGLE_APPLICATION_CREDENTIALS" className="mt-4 block text-sm font-medium">
+                    ADC Credentials JSON
+                  </label>
+                  <input
+                    type="text"
+                    id="GOOGLE_APPLICATION_CREDENTIALS"
+                    name="GOOGLE_APPLICATION_CREDENTIALS"
+                    value={settings.GOOGLE_APPLICATION_CREDENTIALS}
+                    onChange={handleChange}
+                    disabled={settings.GOOGLE_APPLICATION_CREDENTIALS_SOURCE === 'environment'}
+                    className="mt-2 w-full px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg focus:ring-2 focus:ring-gray-600 focus:border-transparent disabled:opacity-60"
+                    placeholder="C:\\path\\to\\application_default_credentials.json"
+                  />
+                  <p className="mt-2 text-xs text-gray-500">
+                    The credentials file remains on disk; AI Toolkit saves only its path. Reauthenticate it with
+                    <code> gcloud auth application-default login</code> if its refresh token is revoked.
+                  </p>
+                  <button
+                    type="button"
+                    disabled={
+                      testStatus === 'testing' ||
+                      !settings.GOOGLE_CLOUD_PROJECT.trim() ||
+                      !settings.GOOGLE_APPLICATION_CREDENTIALS.trim()
+                    }
+                    onClick={() => testGemini('vertex')}
+                    className="mt-3 px-3 py-2 bg-gray-700 hover:bg-gray-600 rounded disabled:opacity-50"
+                  >
+                    {testStatus === 'testing' && testBackend === 'vertex' ? 'Testing...' : 'Test Vertex AI connection'}
+                  </button>
+                  {testMessage && testBackend === 'vertex' && (
                     <p className={`mt-2 text-sm ${testStatus === 'success' ? 'text-green-500' : 'text-red-500'}`}>
                       {testMessage}
                     </p>
