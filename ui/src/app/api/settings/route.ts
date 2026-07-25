@@ -4,25 +4,39 @@ import { defaultTrainFolder, defaultDatasetsFolder } from '@/paths';
 import { flushCache, getSecretStatus, getVertexSettings } from '@/server/settings';
 import { buildPublicSettings, getSecretMutation } from '@/helpers/settingsSecrets';
 import { normalizeVertexSettings } from '@/helpers/vertexSettings';
+import { AWS_ARCHIVE_SETTING_KEYS, RUNPOD_SETTING_KEYS, runPodSecretStatus } from '../../../../cron/remote/settings';
 
 export async function GET() {
   try {
     const settings = await prisma.settings.findMany({
-      where: { key: { in: ['TRAINING_FOLDER', 'DATASETS_FOLDER'] } },
+      where: {
+        key: { in: ['TRAINING_FOLDER', 'DATASETS_FOLDER', ...RUNPOD_SETTING_KEYS, ...AWS_ARCHIVE_SETTING_KEYS] },
+      },
     });
     const [hfToken, geminiApiKey, vertex] = await Promise.all([
       getSecretStatus('HF_TOKEN'),
       getSecretStatus('GEMINI_API_KEY'),
       getVertexSettings(),
     ]);
-    return NextResponse.json(
-      buildPublicSettings(
-        settings,
-        { trainingFolder: defaultTrainFolder, datasetsFolder: defaultDatasetsFolder },
-        { hfToken, geminiApiKey },
-        vertex,
-      ),
+    const publicSettings = buildPublicSettings(
+      settings,
+      { trainingFolder: defaultTrainFolder, datasetsFolder: defaultDatasetsFolder },
+      { hfToken, geminiApiKey },
+      vertex,
     );
+    const stored = Object.fromEntries(settings.map(row => [row.key, row.value]));
+    const remote = Object.fromEntries(
+      RUNPOD_SETTING_KEYS.map(key => [key, process.env[key]?.trim() || stored[key] || '']),
+    );
+    return NextResponse.json({
+      ...publicSettings,
+      ...remote,
+      RUNPOD_ENABLED: process.env.AI_TOOLKIT_RUNPOD_ENABLED === '1',
+      RUNPOD_SECRETS: runPodSecretStatus(),
+      ...Object.fromEntries(AWS_ARCHIVE_SETTING_KEYS.map(key => [key, process.env[key]?.trim() || stored[key] || ''])),
+      AWS_ARCHIVE_ENABLED: process.env.AI_TOOLKIT_AWS_ARCHIVE_ENABLED === '1',
+      AWS_PROFILE_CONFIGURED: Boolean(process.env.AWS_PROFILE?.trim()),
+    });
   } catch (error) {
     return NextResponse.json({ error: 'Failed to fetch settings' }, { status: 500 });
   }
@@ -71,6 +85,35 @@ export async function POST(request: Request) {
     updatePlainSetting('GOOGLE_CLOUD_PROJECT', vertexSettings.GOOGLE_CLOUD_PROJECT);
     updatePlainSetting('GOOGLE_CLOUD_LOCATION', vertexSettings.GOOGLE_CLOUD_LOCATION);
     updatePlainSetting('GOOGLE_APPLICATION_CREDENTIALS', vertexSettings.GOOGLE_APPLICATION_CREDENTIALS);
+
+    for (const key of RUNPOD_SETTING_KEYS) {
+      const value = body[key];
+      if (typeof value !== 'string' || process.env[key]?.trim()) continue;
+      if (!value.trim()) operations.push(prisma.settings.deleteMany({ where: { key } }));
+      else {
+        operations.push(
+          prisma.settings.upsert({
+            where: { key },
+            update: { value: value.trim() },
+            create: { key, value: value.trim() },
+          }),
+        );
+      }
+    }
+    for (const key of AWS_ARCHIVE_SETTING_KEYS) {
+      const value = body[key];
+      if (typeof value !== 'string' || process.env[key]?.trim()) continue;
+      if (!value.trim()) operations.push(prisma.settings.deleteMany({ where: { key } }));
+      else {
+        operations.push(
+          prisma.settings.upsert({
+            where: { key },
+            update: { value: value.trim() },
+            create: { key, value: value.trim() },
+          }),
+        );
+      }
+    }
 
     const updateSecret = (key: 'HF_TOKEN' | 'GEMINI_API_KEY', value: unknown, clear: unknown) => {
       const mutation = getSecretMutation(value, clear);

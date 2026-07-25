@@ -14,6 +14,12 @@ export async function GET(request: NextRequest, { params }: { params: { jobID: s
   if (!job) {
     return NextResponse.json({ error: 'Job not found' }, { status: 404 });
   }
+  if (job.execution_target === 'runpod_serverless' && ['queued', 'running', 'stopping'].includes(job.status)) {
+    return NextResponse.json(
+      { error: 'Stop or force-cancel the remote execution before deleting this job.' },
+      { status: 409 },
+    );
+  }
 
   const trainingRoot = await getTrainingFolder();
   const trainingFolder = path.join(trainingRoot, job.name);

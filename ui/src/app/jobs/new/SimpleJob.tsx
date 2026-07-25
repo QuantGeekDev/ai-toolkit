@@ -42,6 +42,9 @@ type Props = {
   gpuIDs: string | null;
   setGpuIDs: (value: string | null) => void;
   gpuList: any;
+  executionTarget: 'local' | 'runpod_serverless';
+  setExecutionTarget: (value: 'local' | 'runpod_serverless') => void;
+  runPodEnabled: boolean;
   datasetOptions: any;
   isLoading?: boolean;
 };
@@ -57,6 +60,9 @@ export default function SimpleJob({
   gpuIDs,
   setGpuIDs,
   gpuList,
+  executionTarget,
+  setExecutionTarget,
+  runPodEnabled,
   datasetOptions,
   isLoading,
 }: Props) {
@@ -246,13 +252,33 @@ export default function SimpleJob({
               disabled={runId !== null}
               required
             />
-            {showGPUSelect && (
+            <SelectInput
+              label="Execution Target"
+              value={executionTarget}
+              onChange={value => setExecutionTarget(value === 'runpod_serverless' ? 'runpod_serverless' : 'local')}
+              options={[
+                { value: 'local', label: 'Local GPU' },
+                ...(runPodEnabled || executionTarget === 'runpod_serverless'
+                  ? [{ value: 'runpod_serverless', label: 'RunPod Serverless H100' }]
+                  : []),
+              ]}
+            />
+            {showGPUSelect && executionTarget === 'local' && (
               <SelectInput
                 label="GPU ID"
                 value={`${gpuIDs}`}
                 docKey="gpuids"
                 onChange={value => setGpuIDs(value)}
                 options={gpuList.map((gpu: any) => ({ value: `${gpu.index}`, label: `GPU #${gpu.index}` }))}
+              />
+            )}
+            {(executionTarget === 'runpod_serverless' || jobConfig.config.process[0].training_seed != null) && (
+              <NumberInput
+                label="Training Seed"
+                value={jobConfig.config.process[0].training_seed ?? null}
+                onChange={value => setJobConfig(value, 'config.process[0].training_seed')}
+                min={0}
+                required={executionTarget === 'runpod_serverless'}
               />
             )}
             {disableSections.includes('trigger_word') ? null : (

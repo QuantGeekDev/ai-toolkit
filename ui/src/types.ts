@@ -244,6 +244,7 @@ export interface SliderConfig {
 
 export interface ProcessConfig {
   type: string;
+  training_seed?: number;
   sqlite_db_path?: string;
   training_folder: string;
   performance_log_every: number;

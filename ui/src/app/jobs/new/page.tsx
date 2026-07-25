@@ -31,9 +31,20 @@ export default function TrainingForm() {
   const cloneId = searchParams.get('cloneId');
   const requestedTemplateId = searchParams.get('template');
   const [gpuIDs, setGpuIDs] = useState<string | null>(null);
+  const [executionTarget, setExecutionTarget] = useState<'local' | 'runpod_serverless'>('local');
   const { settings, isSettingsLoaded } = useSettings();
   const { gpuList, isGPUInfoLoaded } = useGPUInfo();
   const { datasets, status: datasetFetchStatus } = useDatasetList();
+
+  useEffect(() => {
+    if (
+      executionTarget === 'local' &&
+      (gpuIDs === 'runpod:h100' || gpuIDs === 'cloud' || gpuIDs == null) &&
+      gpuList.length > 0
+    ) {
+      setGpuIDs(`${gpuList[0].index}`);
+    }
+  }, [executionTarget, gpuIDs, gpuList]);
   const {
     catalog: templateCatalog,
     status: templateCatalogStatus,
@@ -118,6 +129,7 @@ export default function TrainingForm() {
         let sourceConfig: unknown = defaultJobConfig;
         let sourceGpuIDs: string | null = gpuList.length > 0 ? `${gpuList[0].index}` : null;
         let sourceTemplateId: string | null = null;
+        let sourceExecutionTarget: 'local' | 'runpod_serverless' = 'local';
 
         if (runId || cloneId) {
           const sourceId = runId || cloneId;
@@ -125,6 +137,8 @@ export default function TrainingForm() {
           if (!response.data?.job_config) throw new Error('The requested training job was not found.');
           sourceConfig = JSON.parse(response.data.job_config);
           sourceGpuIDs = response.data.gpu_ids;
+          sourceExecutionTarget =
+            response.data.execution_target === 'runpod_serverless' ? 'runpod_serverless' : 'local';
           if (!runId && cloneId) {
             const clonedConfig = objectCopy(sourceConfig as JobConfig);
             clonedConfig.config.name = `${clonedConfig.config.name}_copy`;
@@ -143,6 +157,7 @@ export default function TrainingForm() {
         const prepared = prepareConfig(sourceConfig);
         setJobConfig(prepared);
         setGpuIDs(sourceGpuIDs);
+        setExecutionTarget(sourceExecutionTarget);
         setSelectedTemplateId(sourceTemplateId);
         baselineSnapshotRef.current = snapshotJobTemplateState(prepared, sourceGpuIDs);
         setInitializationStatus('success');
@@ -214,6 +229,7 @@ export default function TrainingForm() {
         id: runId,
         name: jobConfig.config.name,
         gpu_ids: gpuIDs,
+        execution_target: executionTarget,
         job_config: jobConfig,
       })
       .then(res => {
@@ -278,11 +294,25 @@ export default function TrainingForm() {
           <>
             <div className="hidden sm:block">
               <SelectInput
-                value={`${gpuIDs}`}
-                onChange={value => setGpuIDs(value)}
-                options={gpuList.map((gpu: any) => ({ value: `${gpu.index}`, label: `GPU #${gpu.index}` }))}
+                value={executionTarget}
+                onChange={value => setExecutionTarget(value === 'runpod_serverless' ? 'runpod_serverless' : 'local')}
+                options={[
+                  { value: 'local', label: 'Local GPU' },
+                  ...(settings.RUNPOD_ENABLED || executionTarget === 'runpod_serverless'
+                    ? [{ value: 'runpod_serverless', label: 'RunPod H100' }]
+                    : []),
+                ]}
               />
             </div>
+            {executionTarget === 'local' && (
+              <div className="hidden sm:block">
+                <SelectInput
+                  value={`${gpuIDs}`}
+                  onChange={value => setGpuIDs(value)}
+                  options={gpuList.map((gpu: any) => ({ value: `${gpu.index}`, label: `GPU #${gpu.index}` }))}
+                />
+              </div>
+            )}
             <div className="hidden sm:block mx-4 bg-gray-200 dark:bg-gray-800 w-1 h-6"></div>
             <div className="hidden md:block">
               <Button className="text-gray-200 bg-gray-800 px-3 py-1 rounded-md" onClick={handleImportConfig}>
@@ -392,6 +422,9 @@ export default function TrainingForm() {
               gpuIDs={gpuIDs}
               setGpuIDs={setGpuIDs}
               gpuList={gpuList}
+              executionTarget={executionTarget}
+              setExecutionTarget={setExecutionTarget}
+              runPodEnabled={settings.RUNPOD_ENABLED}
               datasetOptions={datasetOptions}
               isLoading={
                 !isSettingsLoaded ||

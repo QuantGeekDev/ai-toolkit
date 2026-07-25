@@ -21,9 +21,23 @@ export async function GET(request: NextRequest, { params }: { params: { jobID: s
     where: { id: jobID },
     data: {
       stop: true,
-      info: 'Stopping job...',
+      status: job.execution_target === 'runpod_serverless' ? 'stopping' : job.status,
+      info: job.execution_target === 'runpod_serverless' ? 'Requesting a safe remote stop...' : 'Stopping job...',
     },
   });
+
+  if (job.execution_target === 'runpod_serverless') {
+    await prisma.remoteExecution.updateMany({
+      where: {
+        job_id: job.id,
+        state: {
+          in: ['preparing', 'uploading', 'submitting', 'queued', 'running', 'submission_unknown', 'stop_requested'],
+        },
+      },
+      data: { state: 'stop_requested', phase: 'stop_requested', stop_requested_at: new Date() },
+    });
+    return NextResponse.json({ ...job, status: 'stopping', stop: true });
+  }
 
   // Send SIGINT to the process if we have a PID
   if (job.pid != null) {

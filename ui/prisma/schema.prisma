@@ -22,29 +22,74 @@ model Queue {
 }
 
 model Job {
-  id              String   @id @default(uuid())
-  name            String   @unique
-  gpu_ids         String
-  job_config      String // JSON string
-  created_at      DateTime @default(now())
-  updated_at      DateTime @updatedAt
-  status          String   @default("stopped")
-  stop            Boolean  @default(false)
-  return_to_queue Boolean  @default(false) // same as stop, but will be set to 'queued' when stopped
-  step            Int      @default(0)
-  total_steps     Int?
-  info            String   @default("")
-  speed_string    String   @default("")
-  queue_position  Int      @default(0)
-  pid             Int?
-  job_type        String   @default("train") // 'train', 'caption'
-  job_ref         String? // can be used for anything for special jobs, like dataset path for caption jobs
-  save_now        Boolean  @default(false) // if true, the job will be saved on the next step
-  sample_now      Boolean  @default(false) // if true, the job will be sampled on the next step
+  id                String            @id @default(uuid())
+  name              String            @unique
+  gpu_ids           String
+  job_config        String // JSON string
+  created_at        DateTime          @default(now())
+  updated_at        DateTime          @updatedAt
+  status            String            @default("stopped")
+  stop              Boolean           @default(false)
+  return_to_queue   Boolean           @default(false) // same as stop, but will be set to 'queued' when stopped
+  step              Int               @default(0)
+  total_steps       Int?
+  info              String            @default("")
+  speed_string      String            @default("")
+  queue_position    Int               @default(0)
+  pid               Int?
+  job_type          String            @default("train") // 'train', 'caption'
+  job_ref           String? // can be used for anything for special jobs, like dataset path for caption jobs
+  save_now          Boolean           @default(false) // if true, the job will be saved on the next step
+  sample_now        Boolean           @default(false) // if true, the job will be sampled on the next step
+  execution_target  String            @default("local") // local | runpod_serverless
+  remote_executions RemoteExecution[]
 
   @@index([status])
   @@index([gpu_ids])
   @@index([job_type])
   @@index([job_ref])
+}
 
+model RemoteExecution {
+  id                    String    @id @default(uuid())
+  job_id                String
+  job                   Job       @relation(fields: [job_id], references: [id], onDelete: Cascade)
+  attempt               Int
+  provider              String    @default("runpod")
+  state                 String
+  phase                 String    @default("")
+  request_key           String    @unique
+  provider_job_id       String?   @unique
+  endpoint_id           String
+  bundle_content_digest String    @default("")
+  bundle_archive_sha256 String    @default("")
+  bundle_object_key     String    @default("")
+  bundle_local_path     String    @default("")
+  run_prefix            String
+  worker_image_digest   String
+  requested_gpu         String    @default("NVIDIA H100")
+  actual_gpu            String?
+  progress_json         String    @default("{}")
+  last_event_sequence   Int       @default(0)
+  last_log_offset       Int       @default(0)
+  last_heartbeat_at     DateTime?
+  submitted_at          DateTime?
+  started_at            DateTime?
+  finished_at           DateTime?
+  stop_requested_at     DateTime?
+  artifact_sync_state   String    @default("pending")
+  archive_state         String    @default("disabled")
+  archive_prefix        String?
+  archive_error         String?
+  result_json           String    @default("{}")
+  error_code            String?
+  error_message         String?
+  parent_execution_id   String?
+  resume_prefix         String?
+  created_at            DateTime  @default(now())
+  updated_at            DateTime  @updatedAt
+
+  @@unique([job_id, attempt])
+  @@index([state])
+  @@index([job_id])
 }

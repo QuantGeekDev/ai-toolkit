@@ -8,6 +8,26 @@ import { getTotalSteps } from '@/utils/jobs';
 import { Cpu, HardDrive, Info, Gauge } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import useJobLog from '@/hooks/useJobLog';
+import { apiClient } from '@/utils/api';
+
+type RemoteExecutionSummary = {
+  id: string;
+  attempt: number;
+  state: string;
+  phase: string;
+  provider_job_id?: string | null;
+  requested_gpu: string;
+  actual_gpu?: string | null;
+  artifact_sync_state: string;
+  archive_state: string;
+  archive_prefix?: string | null;
+  archive_error?: string | null;
+  bundle_content_digest: string;
+  worker_image_digest: string;
+  last_heartbeat_at?: string | null;
+  error_code?: string | null;
+  error_message?: string | null;
+};
 
 interface JobOverviewProps {
   job: Job;
@@ -15,7 +35,7 @@ interface JobOverviewProps {
 
 export default function JobOverview({ job }: JobOverviewProps) {
   const gpuIds = useMemo(() => {
-    if (job.gpu_ids === 'cloud') {
+    if (job.gpu_ids === 'cloud' || job.execution_target === 'runpod_serverless') {
       return [];
     }
     if (job.gpu_ids === 'mps') {
@@ -27,11 +47,31 @@ export default function JobOverview({ job }: JobOverviewProps) {
   const logRef = useRef<HTMLDivElement>(null);
   // Track whether we should auto-scroll to bottom
   const [isScrolledToBottom, setIsScrolledToBottom] = useState(true);
+  const [remoteExecution, setRemoteExecution] = useState<RemoteExecutionSummary | null>(null);
   const { gpuList, isGPUInfoLoaded } = useGPUInfo(gpuIds, 5000);
   const { cpuInfo, isCPUInfoLoaded } = useCPUInfo(5000);
   const totalSteps = getTotalSteps(job);
   const progress = (job.step / totalSteps) * 100;
   const isStopping = job.stop && job.status === 'running';
+
+  useEffect(() => {
+    if (job.execution_target !== 'runpod_serverless') return;
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const response = await apiClient.get(`/api/jobs/${job.id}/remote`);
+        if (!cancelled) setRemoteExecution(response.data.executions?.[0] || null);
+      } catch (error) {
+        console.error('Error fetching remote execution:', error);
+      }
+    };
+    void load();
+    const interval = window.setInterval(load, 4000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+    };
+  }, [job.execution_target, job.id]);
 
   const logLines: string[] = useMemo(() => {
     // Log is already terminal-rendered by useJobLog — one entry per line.
@@ -129,7 +169,11 @@ export default function JobOverview({ job }: JobOverviewProps) {
               <div>
                 <p className="text-xs text-gray-400">Execution target</p>
                 <p className="text-sm font-medium text-gray-200">
-                  {job.gpu_ids === 'cloud' ? 'Cloud API' : `GPUs: ${job.gpu_ids}`}
+                  {job.execution_target === 'runpod_serverless'
+                    ? remoteExecution?.actual_gpu || 'RunPod Serverless H100'
+                    : job.gpu_ids === 'cloud'
+                      ? 'Cloud API'
+                      : `GPUs: ${job.gpu_ids}`}
                 </p>
               </div>
             </div>
@@ -142,6 +186,34 @@ export default function JobOverview({ job }: JobOverviewProps) {
               </div>
             </div>
           </div>
+
+          {job.execution_target === 'runpod_serverless' && remoteExecution && (
+            <div className="rounded-lg border border-blue-900/70 bg-blue-950/20 p-3 text-xs text-gray-300">
+              <div className="flex flex-wrap gap-x-5 gap-y-2">
+                <span>Attempt {remoteExecution.attempt}</span>
+                <span>State: {remoteExecution.state}</span>
+                <span>Phase: {remoteExecution.phase || 'pending'}</span>
+                <span>Artifacts: {remoteExecution.artifact_sync_state}</span>
+                <span>AWS archive: {remoteExecution.archive_state}</span>
+                {remoteExecution.provider_job_id && <span>RunPod: {remoteExecution.provider_job_id}</span>}
+              </div>
+              <div className="mt-2 break-all text-gray-500">
+                Bundle {remoteExecution.bundle_content_digest || 'not exported yet'} · Worker{' '}
+                {remoteExecution.worker_image_digest}
+              </div>
+              {remoteExecution.error_message && (
+                <div className="mt-2 text-red-400">
+                  {remoteExecution.error_code}: {remoteExecution.error_message}
+                </div>
+              )}
+              {remoteExecution.archive_prefix && (
+                <div className="mt-2 break-all text-green-500">Archived at {remoteExecution.archive_prefix}</div>
+              )}
+              {remoteExecution.archive_error && (
+                <div className="mt-2 text-amber-400">Archive: {remoteExecution.archive_error}</div>
+              )}
+            </div>
+          )}
 
           {/* Log - Now using flex-grow to fill remaining space */}
           <div className="bg-gray-950 rounded-lg p-4 relative flex-grow min-h-60">
@@ -168,7 +240,9 @@ export default function JobOverview({ job }: JobOverviewProps) {
       <div className="md:col-span-1">
         <div>{isCPUInfoLoaded && cpuInfo && <CPUWidget cpu={cpuInfo} />}</div>
         <div className="mt-4">
-          {job.gpu_ids !== 'cloud' && isGPUInfoLoaded && gpuList.length > 0 && <GPUWidget gpu={gpuList[0]} />}
+          {job.gpu_ids !== 'cloud' && job.execution_target === 'local' && isGPUInfoLoaded && gpuList.length > 0 && (
+            <GPUWidget gpu={gpuList[0]} />
+          )}
         </div>
         {jobType === 'train' && (
           <div className="mt-4">

@@ -82,6 +82,26 @@ export const sampleJobNow = (jobID: string) => {
   });
 };
 
+export const exportTrainingBundle = async (jobID: string) => {
+  const response = await apiClient.post(`/api/jobs/${jobID}/bundle`, { validateOnly: false });
+  return response.data;
+};
+
+export const forceCancelRemoteJob = async (jobID: string) => {
+  const response = await apiClient.post(`/api/jobs/${jobID}/force_cancel`);
+  return response.data;
+};
+
+export const continueRemoteJob = async (jobID: string, additionalSteps = 500) => {
+  const response = await apiClient.post(`/api/jobs/${jobID}/continue`, { additionalSteps });
+  return response.data;
+};
+
+export const archiveRemoteJob = async (jobID: string) => {
+  const response = await apiClient.post(`/api/jobs/${jobID}/archive`);
+  return response.data;
+};
+
 export const markJobAsStopped = (jobID: string) => {
   return new Promise<void>((resolve, reject) => {
     apiClient

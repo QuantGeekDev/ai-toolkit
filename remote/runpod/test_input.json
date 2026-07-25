@@ -1,0 +1,12 @@
+{
+  "input": {
+    "schemaVersion": 1,
+    "executionId": "replace-with-an-execution-id",
+    "requestKey": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+    "bundleKey": "bundles/replace/bundle.tar.gz",
+    "bundleContentDigest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+    "bundleArchiveSha256": "2222222222222222222222222222222222222222222222222222222222222222",
+    "runPrefix": "runs/replace-with-an-execution-id",
+    "expectedWorkerImageDigest": "registry.example/ai-toolkit@sha256:3333333333333333333333333333333333333333333333333333333333333333"
+  }
+}

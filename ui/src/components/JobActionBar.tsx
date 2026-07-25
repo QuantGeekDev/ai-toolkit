@@ -1,9 +1,36 @@
 import Link from 'next/link';
-import { Eye, Trash2, Pen, Play, Pause, Cog, X, Copy, Save, OctagonX, Image } from 'lucide-react';
+import {
+  Eye,
+  Trash2,
+  Pen,
+  Play,
+  Pause,
+  Cog,
+  X,
+  Copy,
+  Save,
+  OctagonX,
+  Image,
+  PackageCheck,
+  Ban,
+  HardDrive,
+} from 'lucide-react';
 import { Button } from '@headlessui/react';
 import { openConfirm } from '@/components/ConfirmModal';
 import { Job } from '@prisma/client';
-import { startJob, stopJob, deleteJob, getAvaliableJobActions, markJobAsStopped, saveJobNow, sampleJobNow } from '@/utils/jobs';
+import {
+  startJob,
+  stopJob,
+  deleteJob,
+  getAvaliableJobActions,
+  markJobAsStopped,
+  saveJobNow,
+  sampleJobNow,
+  exportTrainingBundle,
+  forceCancelRemoteJob,
+  continueRemoteJob,
+  archiveRemoteJob,
+} from '@/utils/jobs';
 import { startQueue } from '@/utils/queue';
 import { Menu, MenuButton, MenuItem, MenuItems } from '@headlessui/react';
 import { redirect } from 'next/navigation';
@@ -44,7 +71,7 @@ export default function JobActionBar({
             await startJob(job.id);
             // start the queue as well
             if (autoStartQueue) {
-              await startQueue(job.gpu_ids);
+              await startQueue(job.execution_target === 'runpod_serverless' ? 'runpod:h100' : job.gpu_ids);
             }
             if (onRefresh) onRefresh();
           }}
@@ -111,34 +138,36 @@ export default function JobActionBar({
           <Pen className={iconSizeClass} />
         </Link>
       )}
-      <Button
-        onClick={() => {
-          let message = `Are you sure you want to delete the job "${job.name}"? This will also permanently remove it from your disk.`;
-          if (job.status === 'running') {
-            message += ' WARNING: The job is currently running. You should stop it first if you can.';
-          }
-          openConfirm({
-            title: 'Delete Job',
-            message: message,
-            type: 'warning',
-            confirmText: 'Delete',
-            onConfirm: async () => {
-              if (job.status === 'running') {
-                try {
-                  await stopJob(job.id);
-                } catch (e) {
-                  console.error('Error stopping job before deleting:', e);
+      {(job.execution_target === 'local' || canDelete) && (
+        <Button
+          onClick={() => {
+            let message = `Are you sure you want to delete the job "${job.name}"? This will also permanently remove it from your disk.`;
+            if (job.status === 'running') {
+              message += ' WARNING: The job is currently running. You should stop it first if you can.';
+            }
+            openConfirm({
+              title: 'Delete Job',
+              message: message,
+              type: 'warning',
+              confirmText: 'Delete',
+              onConfirm: async () => {
+                if (job.status === 'running') {
+                  try {
+                    await stopJob(job.id);
+                  } catch (e) {
+                    console.error('Error stopping job before deleting:', e);
+                  }
                 }
-              }
-              await deleteJob(job.id);
-              if (afterDelete) afterDelete();
-            },
-          });
-        }}
-        className={`ml-1 sm:ml-2 opacity-100`}
-      >
-        <Trash2 className={iconSizeClass} />
-      </Button>
+                await deleteJob(job.id);
+                if (afterDelete) afterDelete();
+              },
+            });
+          }}
+          className={`ml-1 sm:ml-2 opacity-100`}
+        >
+          <Trash2 className={iconSizeClass} />
+        </Button>
+      )}
       <div className="border-r border-1 border-gray-700 ml-1 sm:ml-2 inline"></div>
       <Menu>
         <MenuButton className={'ml-1 sm:ml-2'}>
@@ -159,7 +188,7 @@ export default function JobActionBar({
               </Link>
             </MenuItem>
           )}
-          {job.job_type === 'train' && canStop && (
+          {job.job_type === 'train' && canStop && job.execution_target === 'local' && (
             <MenuItem>
               <div
                 className="cursor-pointer px-4 py-1 hover:bg-gray-800 rounded flex items-center gap-2"
@@ -173,7 +202,7 @@ export default function JobActionBar({
               </div>
             </MenuItem>
           )}
-          {job.job_type === 'train' && canStop && (
+          {job.job_type === 'train' && canStop && job.execution_target === 'local' && (
             <MenuItem>
               <div
                 className="cursor-pointer px-4 py-1 hover:bg-gray-800 rounded flex items-center gap-2"
@@ -184,6 +213,95 @@ export default function JobActionBar({
               >
                 <Image className="w-4 h-4" />
                 Sample Next Step
+              </div>
+            </MenuItem>
+          )}
+          {job.job_type === 'train' && ['stopped', 'completed', 'error'].includes(job.status) && (
+            <MenuItem>
+              <div
+                className="cursor-pointer px-4 py-1 hover:bg-gray-800 rounded flex items-center gap-2"
+                onClick={async () => {
+                  try {
+                    const result = await exportTrainingBundle(job.id);
+                    alert(
+                      `Bundle ready:\n${result.bundlePath}\n\n${result.validation?.summary?.imageCount || 0} images, ${result.validation?.warnings?.length || 0} warning(s).`,
+                    );
+                  } catch (error: any) {
+                    const body = error.response?.data;
+                    alert(
+                      body?.error ||
+                        body?.validation?.errors?.map((item: any) => `${item.code}: ${item.message}`).join('\n') ||
+                        'Bundle export failed.',
+                    );
+                  }
+                }}
+              >
+                <PackageCheck className="w-4 h-4" />
+                Export Training Bundle
+              </div>
+            </MenuItem>
+          )}
+          {job.execution_target === 'runpod_serverless' && ['completed', 'stopped'].includes(job.status) && (
+            <MenuItem>
+              <div
+                className="cursor-pointer px-4 py-1 hover:bg-gray-800 rounded flex items-center gap-2"
+                onClick={() =>
+                  openConfirm({
+                    title: 'Continue Remote Training',
+                    message: `Continue from verified step ${job.step} for 500 more steps (target ${job.step + 500})? This creates a new immutable attempt.`,
+                    type: 'info',
+                    confirmText: 'Continue +500',
+                    onConfirm: async () => {
+                      await continueRemoteJob(job.id, 500);
+                      onRefresh?.();
+                    },
+                  })
+                }
+              >
+                <Play className="w-4 h-4" />
+                Continue +500 Steps
+              </div>
+            </MenuItem>
+          )}
+          {job.execution_target === 'runpod_serverless' && ['completed', 'stopped'].includes(job.status) && (
+            <MenuItem>
+              <div
+                className="cursor-pointer px-4 py-1 hover:bg-gray-800 rounded flex items-center gap-2"
+                onClick={async () => {
+                  try {
+                    await archiveRemoteJob(job.id);
+                    alert('AWS archive queued. Progress will appear in the remote execution panel.');
+                    onRefresh?.();
+                  } catch (error: any) {
+                    alert(error.response?.data?.error || 'Could not queue AWS archive.');
+                  }
+                }}
+              >
+                <HardDrive className="w-4 h-4" />
+                Archive to AWS S3
+              </div>
+            </MenuItem>
+          )}
+          {job.execution_target === 'runpod_serverless' && ['running', 'stopping'].includes(job.status) && (
+            <MenuItem>
+              <div
+                className="cursor-pointer px-4 py-1 text-red-400 hover:bg-gray-800 rounded flex items-center gap-2"
+                onClick={() =>
+                  openConfirm({
+                    title: 'Force Cancel Remote Worker',
+                    message:
+                      'Force cancellation may interrupt a checkpoint write. Try graceful Stop first. Only artifacts already verified locally will be trusted.',
+                    type: 'warning',
+                    confirmText: 'Force Cancel',
+                    onConfirm: async () => {
+                      await forceCancelRemoteJob(job.id);
+                      onRefresh?.();
+                    },
+                  })
+                }
+              >
+                <Ban className="w-4 h-4" />
+                Force Cancel Remote
               </div>
             </MenuItem>
           )}

@@ -211,10 +211,15 @@ export default function JobsTable({ onlyActive = false, job_type = null }: JobsT
       jd[`${gpu.index}`] = { name: `${gpu.name}`, jobs: [] };
     });
     jd['cloud'] = { name: 'Cloud API', jobs: [] };
+    jd['runpod:h100'] = { name: 'RunPod Serverless H100', jobs: [] };
     jd['Idle'] = { name: 'Idle', jobs: [] };
     jobs.forEach(job => {
       if (job.gpu_ids === 'cloud' && ['queued', 'running', 'stopping'].includes(job.status)) {
         jd['cloud'].jobs.push(job);
+        return;
+      }
+      if (job.execution_target === 'runpod_serverless' && ['queued', 'running', 'stopping'].includes(job.status)) {
+        jd['runpod:h100'].jobs.push(job);
         return;
       }
       const gpu = gpuList.find(gpu => job.gpu_ids?.split(',').includes(gpu.index.toString())) as GpuInfo;
@@ -286,7 +291,8 @@ export default function JobsTable({ onlyActive = false, job_type = null }: JobsT
         .filter(
           key =>
             key !== 'Idle' &&
-            (key !== 'cloud' || jobsDict[key].jobs.length > 0 || queues.some(q => q.gpu_ids === 'cloud')),
+            (key !== 'cloud' || jobsDict[key].jobs.length > 0 || queues.some(q => q.gpu_ids === 'cloud')) &&
+            (key !== 'runpod:h100' || jobsDict[key].jobs.length > 0 || queues.some(q => q.gpu_ids === 'runpod:h100')),
         )
         .map(gpuKey => {
           const queue = queues.find(q => `${q.gpu_ids}` === gpuKey) as Queue;
@@ -302,7 +308,7 @@ export default function JobsTable({ onlyActive = false, job_type = null }: JobsT
                 <div className="flex items-center space-x-2 flex-1 min-w-0 py-2">
                   <h2 className="font-semibold text-white truncate">{jobsDict[gpuKey].name}</h2>
                   <span className="px-2 py-0.5 bg-gray-700 rounded-full text-xs text-gray-300 flex-shrink-0">
-                    {gpuKey === 'cloud' ? 'Cloud' : `# ${queue?.gpu_ids}`}
+                    {gpuKey === 'cloud' ? 'Cloud' : gpuKey === 'runpod:h100' ? 'H100' : `# ${queue?.gpu_ids}`}
                   </span>
                 </div>
                 <div className="text-sm text-gray-300 italic flex items-center flex-shrink-0">

@@ -13,6 +13,8 @@
     "format": "prettier --write \"**/*.{js,jsx,ts,tsx,css,scss}\""
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1095.0",
+    "@aws-sdk/lib-storage": "^3.1095.0",
     "@google/genai": "^2.13.0",
     "@headlessui/react": "^2.2.0",
     "@monaco-editor/react": "^4.7.0",

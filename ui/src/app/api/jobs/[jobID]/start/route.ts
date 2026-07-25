@@ -11,6 +11,13 @@ export async function GET(request: NextRequest, { params }: { params: { jobID: s
   if (!job) {
     return NextResponse.json({ error: 'Job not found' }, { status: 404 });
   }
+  if (job.execution_target === 'runpod_serverless' && process.env.AI_TOOLKIT_RUNPOD_ENABLED !== '1') {
+    return NextResponse.json({ error: 'RunPod training is disabled on this AI Toolkit server.' }, { status: 409 });
+  }
+  const gpuIds = job.execution_target === 'runpod_serverless' ? 'runpod:h100' : job.gpu_ids;
+  if (gpuIds !== job.gpu_ids) {
+    await prisma.job.update({ where: { id: job.id }, data: { gpu_ids: gpuIds } });
+  }
 
   // get highest queue position
   const highestQueuePosition = await prisma.job.aggregate({
@@ -28,7 +35,7 @@ export async function GET(request: NextRequest, { params }: { params: { jobID: s
   // make sure the queue is running
   const queue = await prisma.queue.findFirst({
     where: {
-      gpu_ids: job.gpu_ids,
+      gpu_ids: gpuIds,
     },
   });
 
@@ -36,7 +43,7 @@ export async function GET(request: NextRequest, { params }: { params: { jobID: s
   if (!queue) {
     await prisma.queue.create({
       data: {
-        gpu_ids: job.gpu_ids,
+        gpu_ids: gpuIds,
         is_running: false,
       },
     });

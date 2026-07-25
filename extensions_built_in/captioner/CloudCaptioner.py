@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections import OrderedDict
 import concurrent.futures
+import hashlib
 import json
 import os
 import re
@@ -123,6 +124,7 @@ class CloudCaptioner(BaseCaptioner):
         BaseExtensionProcess.run(self)
         self.start_stop_watcher()
         self.update_status("running", "Connecting to caption provider")
+        completed = False
         try:
             self.load_model()
             self.update_status("running", "Looking for files")
@@ -132,11 +134,109 @@ class CloudCaptioner(BaseCaptioner):
             self.update_status("running", f"Captioning {len(self.file_paths)} files with cloud API")
             self.run_caption_loop()
             summary = self._summary()
+            completed = self.stats["failed"] == 0
+            self._write_dataset_provenance(complete=completed)
             self.update_status("completed", summary)
             print(f"\n{summary}")
         finally:
+            if not completed:
+                try:
+                    self._write_dataset_provenance(complete=False)
+                except OSError as provenance_error:
+                    print(f"Warning: could not write caption provenance: {provenance_error}")
             if self.provider is not None:
                 self.provider.close()
+
+    @staticmethod
+    def _hash_file(path: str) -> str:
+        digest = hashlib.sha256()
+        with open(path, "rb") as handle:
+            while True:
+                chunk = handle.read(1024 * 1024)
+                if not chunk:
+                    break
+                digest.update(chunk)
+        return digest.hexdigest()
+
+    def _write_dataset_provenance(self, *, complete: bool):
+        root = os.path.abspath(self.caption_config.path_to_caption)
+        caption_hashes = {}
+        missing = []
+        extensions = {f".{str(extension).lower().lstrip('.')}" for extension in self.caption_config.extensions}
+        for current, directories, files in os.walk(root):
+            directories[:] = sorted(
+                directory
+                for directory in directories
+                if not directory.startswith(".")
+                and directory not in {"_latent_cache", "_t_e_cache", "_controls"}
+            )
+            for filename in sorted(files):
+                image_path = os.path.join(current, filename)
+                if os.path.splitext(filename)[1].lower() not in extensions:
+                    continue
+                caption_path = os.path.splitext(image_path)[0] + f".{self.caption_config.caption_extension}"
+                relative = os.path.relpath(image_path, root).replace(os.sep, "/")
+                try:
+                    with open(caption_path, "r", encoding="utf-8-sig") as handle:
+                        caption = handle.read().strip()
+                    if not caption:
+                        raise ValueError("empty caption")
+                    caption_hashes[relative] = self._hash_file(caption_path)
+                except (OSError, UnicodeError, ValueError):
+                    missing.append(relative)
+
+        options = dict(self.caption_config.provider_options)
+        prompt = self.caption_config.caption_prompt
+        now = datetime.now(timezone.utc).isoformat()
+        record = {
+            "schemaVersion": 1,
+            # A single prompt/model provenance record is truthful only when this
+            # run produced every caption in the dataset. Mixed old/new captions
+            # remain usable, but export records them as manual/unknown instead.
+            "complete": bool(
+                complete
+                and not missing
+                and self.stats["failed"] == 0
+                and self.stats["captioned"] == len(caption_hashes)
+            ),
+            "provider": self.caption_config.provider,
+            "backend": options.get("backend", "developer"),
+            "model": self.caption_config.model,
+            "promptTemplateId": self.caption_config.caption_prompt_template or None,
+            "prompt": prompt,
+            "promptSha256": hashlib.sha256(prompt.encode("utf-8")).hexdigest(),
+            "captionJobId": self.job_id,
+            "completedAt": now if complete else None,
+            "updatedAt": now,
+            "recaption": self.caption_config.recaption,
+            "captionCount": len(caption_hashes),
+            "missing": missing,
+            "failureCount": self.stats["failed"],
+            "blockedCount": self.stats["blocked"],
+            "captions": caption_hashes,
+        }
+        basename = ".aitk_caption_provenance.json" if record["complete"] else ".aitk_caption_provenance.partial.json"
+        target = os.path.join(root, basename)
+        fd, temporary = tempfile.mkstemp(prefix=f".{basename}.", suffix=".tmp", dir=root)
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as handle:
+                json.dump(record, handle, ensure_ascii=False, sort_keys=True, indent=2)
+                handle.write("\n")
+                handle.flush()
+                os.fsync(handle.fileno())
+            os.replace(temporary, target)
+            if record["complete"]:
+                partial = os.path.join(root, ".aitk_caption_provenance.partial.json")
+                try:
+                    os.remove(partial)
+                except FileNotFoundError:
+                    pass
+        except Exception:
+            try:
+                os.remove(temporary)
+            except FileNotFoundError:
+                pass
+            raise
 
     def _caption_one(self, file_path: str):
         prepared = prepare_image(

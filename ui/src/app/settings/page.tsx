@@ -11,6 +11,8 @@ export default function Settings() {
   const [testStatus, setTestStatus] = useState<'idle' | 'testing' | 'success' | 'error'>('idle');
   const [testBackend, setTestBackend] = useState<'developer' | 'vertex' | null>(null);
   const [testMessage, setTestMessage] = useState('');
+  const [runPodTestStatus, setRunPodTestStatus] = useState<'idle' | 'testing' | 'success' | 'error'>('idle');
+  const [runPodTestMessage, setRunPodTestMessage] = useState('');
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -108,6 +110,23 @@ export default function Settings() {
     return source === 'environment' ? 'Configured by environment variable' : 'Saved locally';
   };
 
+  const testRunPod = async () => {
+    setRunPodTestStatus('testing');
+    setRunPodTestMessage('');
+    try {
+      await apiClient.post('/api/settings', settings);
+      const response = await apiClient.post('/api/settings/providers/runpod/test');
+      setRunPodTestStatus('success');
+      setRunPodTestMessage(
+        `Endpoint passed strict H100 checks (${response.data.warnings?.length || 0} warning(s)); workersMin=0 and workersMax=1.`,
+      );
+    } catch (error: any) {
+      setRunPodTestStatus('error');
+      const body = error.response?.data;
+      setRunPodTestMessage(body?.errors?.join(' ') || body?.error || 'RunPod preflight failed.');
+    }
+  };
+
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
     setSettings(prev => ({
@@ -169,6 +188,39 @@ export default function Settings() {
                       </button>
                     )}
                   </div>
+                </div>
+
+                <div className="rounded-lg border border-gray-700 p-4">
+                  <h2 className="text-sm font-medium text-gray-200">Optional AWS S3 Archive</h2>
+                  <p className="mt-1 text-sm text-gray-500">
+                    The local controller can archive verified bundles and artifacts after RunPod completes. Enable with
+                    <code> AI_TOOLKIT_AWS_ARCHIVE_ENABLED=1</code> and launch with <code>AWS_PROFILE=echoflicks</code>{' '}
+                    (or another standard AWS credential source). AWS credentials are never sent to RunPod.
+                  </p>
+                  <p className="mt-2 text-xs text-gray-500">
+                    Status: {settings.AWS_ARCHIVE_ENABLED ? 'enabled' : 'disabled'} · AWS profile environment{' '}
+                    {settings.AWS_PROFILE_CONFIGURED ? 'configured' : 'not set'}
+                  </p>
+                  {[
+                    ['AWS_ARCHIVE_BUCKET', 'Archive bucket', 'my-private-training-archive'],
+                    ['AWS_ARCHIVE_REGION', 'AWS region', 'eu-west-1'],
+                    ['AWS_ARCHIVE_PREFIX', 'Key prefix', 'ai-toolkit'],
+                  ].map(([name, label, placeholder]) => (
+                    <div key={name} className="mt-3">
+                      <label htmlFor={name} className="block text-sm font-medium">
+                        {label}
+                      </label>
+                      <input
+                        type="text"
+                        id={name}
+                        name={name}
+                        value={String(settings[name as keyof typeof settings] || '')}
+                        onChange={handleChange}
+                        className="mt-1 w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg"
+                        placeholder={placeholder}
+                      />
+                    </div>
+                  ))}
                 </div>
 
                 <div>
@@ -290,6 +342,62 @@ export default function Settings() {
                   {testMessage && testBackend === 'vertex' && (
                     <p className={`mt-2 text-sm ${testStatus === 'success' ? 'text-green-500' : 'text-red-500'}`}>
                       {testMessage}
+                    </p>
+                  )}
+                </div>
+
+                <div className="rounded-lg border border-gray-700 p-4">
+                  <h2 className="text-sm font-medium text-gray-200">RunPod Serverless H100</h2>
+                  <p className="mt-1 text-sm text-gray-500">
+                    Optional scale-to-zero training. Secrets are accepted only through environment variables and are
+                    never returned to this page. Set <code>AI_TOOLKIT_RUNPOD_ENABLED=1</code>,{' '}
+                    <code>RUNPOD_API_KEY</code>,<code> RUNPOD_S3_ACCESS_ID</code>, and <code>RUNPOD_S3_SECRET</code>{' '}
+                    before starting the UI.
+                  </p>
+                  <div className="mt-3 text-xs text-gray-500">
+                    Status: {settings.RUNPOD_ENABLED ? 'enabled' : 'disabled'} · API key{' '}
+                    {settings.RUNPOD_SECRETS.apiKeyConfigured ? 'configured' : 'missing'} · S3 credentials{' '}
+                    {settings.RUNPOD_SECRETS.s3AccessIdConfigured && settings.RUNPOD_SECRETS.s3SecretConfigured
+                      ? 'configured'
+                      : 'missing'}
+                  </div>
+                  {[
+                    ['RUNPOD_ENDPOINT_ID', 'Endpoint ID', 'RunPod Serverless endpoint ID'],
+                    ['RUNPOD_NETWORK_VOLUME_ID', 'Network volume ID', 'RunPod network volume ID'],
+                    ['RUNPOD_S3_ENDPOINT', 'S3 endpoint', 'https://s3api-REGION.runpod.io'],
+                    ['RUNPOD_S3_REGION', 'S3 datacenter region', 'EU-RO-1'],
+                    ['RUNPOD_S3_BUCKET', 'S3 bucket', 'Usually the network volume ID'],
+                    ['RUNPOD_WORKER_IMAGE_DIGEST', 'Worker image digest', 'registry/image@sha256:...'],
+                    ['RUNPOD_EXECUTION_TIMEOUT_MS', 'Execution timeout (ms)', '10800000'],
+                    ['RUNPOD_TTL_MS', 'Queue TTL (ms)', '21600000'],
+                    ['RUNPOD_BUNDLE_DIRECTORY', 'Local bundle directory', 'Blank uses output/.bundles'],
+                  ].map(([name, label, placeholder]) => (
+                    <div key={name} className="mt-3">
+                      <label htmlFor={name} className="block text-sm font-medium">
+                        {label}
+                      </label>
+                      <input
+                        type="text"
+                        id={name}
+                        name={name}
+                        value={String(settings[name as keyof typeof settings] || '')}
+                        onChange={handleChange}
+                        className="mt-1 w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg focus:ring-2 focus:ring-gray-600 focus:border-transparent"
+                        placeholder={placeholder}
+                      />
+                    </div>
+                  ))}
+                  <button
+                    type="button"
+                    disabled={runPodTestStatus === 'testing'}
+                    onClick={testRunPod}
+                    className="mt-4 px-3 py-2 bg-gray-700 hover:bg-gray-600 rounded disabled:opacity-50"
+                  >
+                    {runPodTestStatus === 'testing' ? 'Testing...' : 'Save and test RunPod'}
+                  </button>
+                  {runPodTestMessage && (
+                    <p className={`mt-2 text-sm ${runPodTestStatus === 'success' ? 'text-green-500' : 'text-red-500'}`}>
+                      {runPodTestMessage}
                     </p>
                   )}
                 </div>

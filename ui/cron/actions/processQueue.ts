@@ -26,6 +26,8 @@ export default async function processQueue() {
           where: { id: job.id },
           data: {
             return_to_queue: true,
+            stop: job.execution_target === 'runpod_serverless' ? true : job.stop,
+            status: job.execution_target === 'runpod_serverless' ? 'stopping' : job.status,
             info: 'Stopping job...',
           },
         });

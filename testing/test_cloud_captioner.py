@@ -1,4 +1,5 @@
 import os
+import json
 import tempfile
 import threading
 import time
@@ -356,6 +357,42 @@ class CloudCaptionLoopIntegrationTests(unittest.TestCase):
                 report = handle.read()
             self.assertIn('"category": "response"', report)
             self.assertNotIn("image_bytes", report)
+
+    def test_completed_caption_job_writes_exportable_dataset_provenance(self):
+        with tempfile.TemporaryDirectory() as folder:
+            image_path = os.path.join(folder, "one.png")
+            caption_path = os.path.join(folder, "one.txt")
+            Image.new("RGB", (16, 16), "blue").save(image_path)
+            with open(caption_path, "w", encoding="utf-8") as handle:
+                handle.write("[trigger], a blue test frame")
+
+            captioner = CloudCaptioner.__new__(CloudCaptioner)
+            captioner.caption_config = CloudCaptionConfig(
+                path_to_caption=folder,
+                provider="gemini",
+                caption_prompt_template="krea2_identity",
+                recaption=True,
+            )
+            captioner.job_id = "caption-job-1"
+            captioner.stats = {
+                "captioned": 1,
+                "failed": 0,
+                "blocked": 0,
+                "retried": 0,
+                "input_tokens": 0,
+                "output_tokens": 0,
+                "thoughts_tokens": 0,
+            }
+            captioner._write_dataset_provenance(complete=True)
+
+            with open(os.path.join(folder, ".aitk_caption_provenance.json"), "r", encoding="utf-8") as handle:
+                provenance = json.load(handle)
+            self.assertTrue(provenance["complete"])
+            self.assertEqual(provenance["captionJobId"], "caption-job-1")
+            self.assertEqual(provenance["model"], "gemini-3.1-pro-preview")
+            self.assertEqual(provenance["promptTemplateId"], "krea2_identity")
+            self.assertEqual(len(provenance["promptSha256"]), 64)
+            self.assertEqual(len(provenance["captions"]["one.png"]), 64)
 
 
 if __name__ == "__main__":

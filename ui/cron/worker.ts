@@ -1,4 +1,5 @@
 import processQueue from './actions/processQueue';
+import reconcileRemoteExecutions from './actions/reconcileRemoteExecutions';
 import prisma from './prisma';
 
 // Journal mode for the main sqlite db. WAL keeps readers from blocking while
@@ -63,6 +64,7 @@ class CronWorker {
   }
 
   async loop() {
+    await reconcileRemoteExecutions();
     await processQueue();
   }
 }

@@ -22,6 +22,28 @@ export interface Settings {
   GOOGLE_APPLICATION_CREDENTIALS_SOURCE: 'environment' | 'local' | null;
   VERTEX_ADC_CONFIGURED: boolean;
   VERTEX_CONFIGURED: boolean;
+  RUNPOD_ENABLED: boolean;
+  RUNPOD_ENDPOINT_ID: string;
+  RUNPOD_NETWORK_VOLUME_ID: string;
+  RUNPOD_S3_ENDPOINT: string;
+  RUNPOD_S3_REGION: string;
+  RUNPOD_S3_BUCKET: string;
+  RUNPOD_WORKER_IMAGE_DIGEST: string;
+  RUNPOD_EXECUTION_TIMEOUT_MS: string;
+  RUNPOD_TTL_MS: string;
+  RUNPOD_BUNDLE_DIRECTORY: string;
+  RUNPOD_SECRETS: {
+    apiKeyConfigured: boolean;
+    s3AccessIdConfigured: boolean;
+    s3SecretConfigured: boolean;
+    hfTokenConfigured: boolean;
+    source: string;
+  };
+  AWS_ARCHIVE_ENABLED: boolean;
+  AWS_ARCHIVE_BUCKET: string;
+  AWS_ARCHIVE_REGION: string;
+  AWS_ARCHIVE_PREFIX: string;
+  AWS_PROFILE_CONFIGURED: boolean;
 }
 
 export default function useSettings() {
@@ -44,6 +66,28 @@ export default function useSettings() {
     GOOGLE_APPLICATION_CREDENTIALS_SOURCE: null,
     VERTEX_ADC_CONFIGURED: false,
     VERTEX_CONFIGURED: false,
+    RUNPOD_ENABLED: false,
+    RUNPOD_ENDPOINT_ID: '',
+    RUNPOD_NETWORK_VOLUME_ID: '',
+    RUNPOD_S3_ENDPOINT: '',
+    RUNPOD_S3_REGION: '',
+    RUNPOD_S3_BUCKET: '',
+    RUNPOD_WORKER_IMAGE_DIGEST: '',
+    RUNPOD_EXECUTION_TIMEOUT_MS: '10800000',
+    RUNPOD_TTL_MS: '21600000',
+    RUNPOD_BUNDLE_DIRECTORY: '',
+    RUNPOD_SECRETS: {
+      apiKeyConfigured: false,
+      s3AccessIdConfigured: false,
+      s3SecretConfigured: false,
+      hfTokenConfigured: false,
+      source: 'environment',
+    },
+    AWS_ARCHIVE_ENABLED: false,
+    AWS_ARCHIVE_BUCKET: '',
+    AWS_ARCHIVE_REGION: 'us-east-1',
+    AWS_ARCHIVE_PREFIX: 'ai-toolkit',
+    AWS_PROFILE_CONFIGURED: false,
   });
   const [isSettingsLoaded, setIsLoaded] = useState(false);
   useEffect(() => {
@@ -70,6 +114,28 @@ export default function useSettings() {
           GOOGLE_APPLICATION_CREDENTIALS_SOURCE: data.GOOGLE_APPLICATION_CREDENTIALS_SOURCE || null,
           VERTEX_ADC_CONFIGURED: Boolean(data.VERTEX_ADC_CONFIGURED),
           VERTEX_CONFIGURED: Boolean(data.VERTEX_CONFIGURED),
+          RUNPOD_ENABLED: Boolean(data.RUNPOD_ENABLED),
+          RUNPOD_ENDPOINT_ID: data.RUNPOD_ENDPOINT_ID || '',
+          RUNPOD_NETWORK_VOLUME_ID: data.RUNPOD_NETWORK_VOLUME_ID || '',
+          RUNPOD_S3_ENDPOINT: data.RUNPOD_S3_ENDPOINT || '',
+          RUNPOD_S3_REGION: data.RUNPOD_S3_REGION || '',
+          RUNPOD_S3_BUCKET: data.RUNPOD_S3_BUCKET || '',
+          RUNPOD_WORKER_IMAGE_DIGEST: data.RUNPOD_WORKER_IMAGE_DIGEST || '',
+          RUNPOD_EXECUTION_TIMEOUT_MS: data.RUNPOD_EXECUTION_TIMEOUT_MS || '10800000',
+          RUNPOD_TTL_MS: data.RUNPOD_TTL_MS || '21600000',
+          RUNPOD_BUNDLE_DIRECTORY: data.RUNPOD_BUNDLE_DIRECTORY || '',
+          RUNPOD_SECRETS: data.RUNPOD_SECRETS || {
+            apiKeyConfigured: false,
+            s3AccessIdConfigured: false,
+            s3SecretConfigured: false,
+            hfTokenConfigured: false,
+            source: 'environment',
+          },
+          AWS_ARCHIVE_ENABLED: Boolean(data.AWS_ARCHIVE_ENABLED),
+          AWS_ARCHIVE_BUCKET: data.AWS_ARCHIVE_BUCKET || '',
+          AWS_ARCHIVE_REGION: data.AWS_ARCHIVE_REGION || 'us-east-1',
+          AWS_ARCHIVE_PREFIX: data.AWS_ARCHIVE_PREFIX || 'ai-toolkit',
+          AWS_PROFILE_CONFIGURED: Boolean(data.AWS_PROFILE_CONFIGURED),
         });
         setIsLoaded(true);
       })

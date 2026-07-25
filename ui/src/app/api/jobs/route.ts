@@ -60,16 +60,40 @@ export async function POST(request: Request) {
   try {
     const body = await request.json();
     const { id, name, job_config } = body;
+    const executionTarget = String(body.execution_target || 'local');
+    if (!['local', 'runpod_serverless'].includes(executionTarget)) {
+      return NextResponse.json({ error: 'Invalid execution target.' }, { status: 400 });
+    }
     let gpu_ids: string = body.gpu_ids;
     const isCloudCaptioner = isCloudCaptionJob(job_config);
 
     if (isCloudCaptioner) {
+      if (executionTarget !== 'local') {
+        return NextResponse.json(
+          { error: 'Cloud caption jobs run locally and cannot use the RunPod training queue.' },
+          { status: 400 },
+        );
+      }
       gpu_ids = CLOUD_QUEUE_KEY;
-    } else if (gpu_ids === CLOUD_QUEUE_KEY) {
-      return NextResponse.json({ error: 'The cloud queue is reserved for cloud caption jobs.' }, { status: 400 });
+    } else if ([CLOUD_QUEUE_KEY, 'runpod:h100'].includes(gpu_ids)) {
+      return NextResponse.json({ error: 'Select a local GPU for local training jobs.' }, { status: 400 });
     }
 
-    if (isMac() && !isCloudCaptioner) {
+    if (executionTarget === 'runpod_serverless') {
+      if (process.env.AI_TOOLKIT_RUNPOD_ENABLED !== '1') {
+        return NextResponse.json({ error: 'RunPod training is disabled on this AI Toolkit server.' }, { status: 403 });
+      }
+      if (job_config?.config?.process?.[0]?.type !== 'diffusion_trainer') {
+        return NextResponse.json({ error: 'Only diffusion trainer jobs can run on RunPod.' }, { status: 400 });
+      }
+      const trainingSeed = job_config?.config?.process?.[0]?.training_seed;
+      if (!Number.isSafeInteger(trainingSeed)) {
+        return NextResponse.json({ error: 'Remote training requires an integer training seed.' }, { status: 400 });
+      }
+      gpu_ids = 'runpod:h100';
+    }
+
+    if (isMac() && !isCloudCaptioner && executionTarget === 'local') {
       gpu_ids = 'mps';
     }
 
@@ -83,12 +107,18 @@ export async function POST(request: Request) {
     }
 
     if (id) {
+      const existing = await prisma.job.findUnique({ where: { id } });
+      if (!existing) return NextResponse.json({ error: 'Job not found' }, { status: 404 });
+      if (['queued', 'running', 'stopping'].includes(existing.status)) {
+        return NextResponse.json({ error: 'Stop the active job before editing its configuration.' }, { status: 409 });
+      }
       // Update existing training
       const training = await prisma.job.update({
         where: { id },
         data: {
           name,
           gpu_ids,
+          execution_target: executionTarget,
           job_config: JSON.stringify(job_config),
           ...extra,
         },
@@ -108,6 +138,7 @@ export async function POST(request: Request) {
         data: {
           name,
           gpu_ids,
+          execution_target: executionTarget,
           job_config: JSON.stringify(job_config),
           queue_position: newQueuePosition,
           ...extra,

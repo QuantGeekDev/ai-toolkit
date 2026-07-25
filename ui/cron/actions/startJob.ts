@@ -133,6 +133,9 @@ const startAndWatchJob = (job: Job) => {
       IS_AI_TOOLKIT_UI: '1',
       PYTHONUNBUFFERED: '1', // write Python output immediately so it is not lost on a crash
     };
+    if (Number.isInteger(processConfig.training_seed)) {
+      additionalEnv.SEED = String(processConfig.training_seed);
+    }
     if (!isCloudCaptioner) {
       additionalEnv.CUDA_VISIBLE_DEVICES = `${job.gpu_ids}`;
     }
@@ -292,6 +295,18 @@ export default async function startJob(jobID: string) {
       info: 'Starting job...',
     },
   });
+  if (job.execution_target === 'runpod_serverless') {
+    void import('./startRemoteJob')
+      .then(({ default: startRemoteJob }) => startRemoteJob(job))
+      .catch(async (error: any) => {
+        console.error('Error preparing remote job:', error);
+        await prisma.job.update({
+          where: { id: jobID },
+          data: { status: 'error', pid: null, info: error?.message || 'Remote job preparation failed.' },
+        });
+      });
+    return;
+  }
   // start and watch the job asynchronously so the cron can continue
   startAndWatchJob(job);
 }
