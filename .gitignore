@@ -173,6 +173,8 @@ cython_debug/
 !/config/examples
 !/config/job_templates/
 !/config/job_templates/**
+!/config/caption_prompt_templates/
+!/config/caption_prompt_templates/**
 !/config/_PUT_YOUR_CONFIGS_HERE).txt
 /output/*
 !/output/.gitkeep

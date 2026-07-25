@@ -227,6 +227,7 @@ export const CaptionDatasetModal: React.FC = () => {
               vertexConfigured={settings.VERTEX_CONFIGURED}
               vertexProject={settings.GOOGLE_CLOUD_PROJECT}
               vertexLocation={settings.GOOGLE_CLOUD_LOCATION}
+              isNewJob={!modalInfo?.jobId && !modalInfo?.cloneId}
             />
           ) : (
             <div className="h-[60vh] mt-2">

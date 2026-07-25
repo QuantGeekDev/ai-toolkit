@@ -1,0 +1,7 @@
+{
+  "schema_version": 1,
+  "label": "Krea 2 - Identity / face",
+  "description": "Binds a person's stable identity to [trigger] while captioning controllable scene details.",
+  "family": "krea2",
+  "prompt": "Write one natural-language training caption for a Krea 2 identity LoRA. Refer to the target exactly once as '[trigger] person' within the first sentence. Describe only what is visibly present: framing and shot type, pose or action, expression and gaze, variable hairstyle, clothing and accessories, setting and background, lighting, and photographic or artistic medium when relevant. Do not identify the person by a real name or as a public figure. Do not enumerate stable facial anatomy, body shape, skin tone, eye color, permanent marks, or other intrinsic identity traits; those must be learned through [trigger]. Do not infer hidden or off-frame details. Return one plain paragraph of approximately 30-90 words. Do not output JSON, keys, lists, bounding boxes, coordinates, hex colors, analysis, caveats, or introductory text. Preserve the literal token [trigger] exactly."
+}

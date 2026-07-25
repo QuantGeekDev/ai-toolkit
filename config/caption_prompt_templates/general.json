@@ -1,0 +1,7 @@
+{
+  "schema_version": 1,
+  "label": "General detailed image",
+  "description": "A model-neutral natural-language caption for image training.",
+  "family": "general",
+  "prompt": "Caption this image as if you were going to recreate it with an image generator. Describe only what is visibly present, including the subject, composition, setting, lighting, colors, and medium. Be thorough, decisive, and concrete. Do not hedge with phrases such as 'it appears' or 'possibly'. Return only the caption with no preamble."
+}

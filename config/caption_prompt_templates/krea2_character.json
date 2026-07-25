@@ -1,0 +1,7 @@
+{
+  "schema_version": 1,
+  "label": "Krea 2 - Character design",
+  "description": "Binds the intrinsic character design to [trigger] while keeping clothing and scenes controllable.",
+  "family": "krea2",
+  "prompt": "Write one natural-language training caption for a Krea 2 character LoRA. Refer to the target exactly once as '[trigger] character' within the first sentence. Describe only what is visibly present: framing, pose or action, expression and gaze, variable clothing and accessories, setting and background, lighting, and medium or rendering style when relevant. Treat the character's intrinsic face, anatomy, species traits, permanent markings, and signature colors as core identity and do not enumerate them; they must be learned through [trigger]. Describe clothing when it should remain prompt-controllable. Do not identify a copyrighted or public character by name. Do not infer hidden or off-frame details. Return one plain paragraph of approximately 30-90 words. Do not output JSON, keys, lists, bounding boxes, coordinates, hex colors, analysis, caveats, or introductory text. Preserve the literal token [trigger] exactly."
+}
