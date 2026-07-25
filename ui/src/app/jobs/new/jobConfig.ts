@@ -2,6 +2,7 @@
 import { isMac } from '@/helpers/basic';
 import { defaultSampleConfig } from '@/helpers/defaultSamples';
 import { JobConfig, SampleConfig, DatasetConfig, SliderConfig } from '@/types';
+import { objectCopy } from '@/utils/basic';
 
 export const defaultDatasetConfig: DatasetConfig = {
   folder_path: '/path/to/images/folder',
@@ -165,4 +166,33 @@ export const migrateJobConfig = (jobConfig: JobConfig): JobConfig => {
   }
 
   return jobConfig;
+};
+
+export type PrepareJobConfigOptions = {
+  trainingFolder: string;
+  firstDatasetPath?: string;
+};
+
+export const prepareJobConfig = (source: unknown, options: PrepareJobConfigOptions): JobConfig => {
+  const candidate = source as JobConfig;
+  if (!candidate?.config?.process?.[0] || typeof candidate.config.name !== 'string') {
+    throw new Error('Job configuration must contain config.name and config.process[0]');
+  }
+
+  const prepared = migrateJobConfig(objectCopy(candidate));
+  const processConfig = prepared.config.process[0];
+  processConfig.sqlite_db_path = './aitk_db.db';
+  processConfig.training_folder = options.trainingFolder;
+  processConfig.device = isMac() ? 'mps' : 'cuda';
+  processConfig.performance_log_every = 10;
+
+  if (options.firstDatasetPath) {
+    for (const dataset of processConfig.datasets || []) {
+      if (dataset.folder_path === defaultDatasetConfig.folder_path) {
+        dataset.folder_path = options.firstDatasetPath;
+      }
+    }
+  }
+
+  return prepared;
 };

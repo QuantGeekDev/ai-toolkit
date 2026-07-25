@@ -15,7 +15,8 @@ The Gemini adapter supports two explicit backends and never silently switches be
 2. Create a Gemini authorization key in Google AI Studio and restrict it to the Gemini API.
 3. Prefer setting `GEMINI_API_KEY` before starting the AI Toolkit UI. Alternatively, open **Settings**, enter the key, save it, and use **Test Gemini connection**.
 4. Open a dataset, select **Caption Dataset**, then select **Gemini 3.1 Pro (Preview)** and **Gemini Developer API**.
-5. Review the prompt and settings, then add the job to the queue.
+5. Choose a **Caption Prompt Preset**. The Krea 2 identity and character presets keep `[trigger]` literal for replacement during training. You can edit any preset; edited prompts are recorded as **Custom prompt**.
+6. Review the prompt and settings, then add the job to the queue.
 
 Keys supplied through the environment take precedence. A key saved in Settings is stored in AI Toolkit's local SQLite database and is not encrypted at rest. Secret values are not returned to the browser and are never included in job configuration files.
 
@@ -55,6 +56,8 @@ The integration uses the stable `generateContent` API behind a provider-neutral 
 ## Advanced configuration
 
 See [`config/examples/caption_directory_gemini.yml`](config/examples/caption_directory_gemini.yml) and [`config/examples/caption_directory_gemini_vertex.yml`](config/examples/caption_directory_gemini_vertex.yml). Credentials and ADC paths are intentionally rejected in job YAML; configure them through the environment or Settings.
+
+Caption jobs may set `caption_prompt_template` to `general`, `krea2_identity`, `krea2_character`, or `krea2_character_outfit`. If `caption_prompt` is also present, the explicit prompt wins; this preserves the exact prompt used by exported or cloned jobs.
 
 The model ID is editable because preview model names can be retired. AI Toolkit never silently substitutes another model or paid provider.
 

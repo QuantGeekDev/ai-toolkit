@@ -293,6 +293,7 @@ export interface CaptionProcessConfig {
     recaption: boolean;
     compile?: boolean;
     caption_prompt?: string;
+    caption_prompt_template?: string;
     max_res?: number;
     max_new_tokens?: number;
     fixed_caption?: string;

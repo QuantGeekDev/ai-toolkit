@@ -15,7 +15,9 @@ export default function AutoCaptionButton({ datasetPath, setIsAutoCaptioning, ca
   const { job, status, refreshJob } = useJobByRef(datasetPath, 5000);
   useEffect(() => {
     if (setIsAutoCaptioning) {
-      setIsAutoCaptioning(!!(job && job.status === 'running'));
+      setIsAutoCaptioning(
+        !!(job && (job.status === 'running' || job.status === 'queued' || job.status === 'stopping')),
+      );
     }
   }, [job, setIsAutoCaptioning]);
 

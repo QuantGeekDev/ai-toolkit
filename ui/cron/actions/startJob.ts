@@ -5,6 +5,7 @@ import path from 'path';
 import fs from 'fs';
 import { TOOLKIT_ROOT, getTrainingFolder, getHFToken, getGeminiAPIKey, getVertexSettings } from '../paths';
 import { resolvePythonPath } from '../pythonPath';
+import { getCloudCaptionProviderOptions } from './captionProviderOptions';
 const isWindows = process.platform === 'win32';
 
 const appendJobLog = (logPath: string, message: string) => {
@@ -57,7 +58,7 @@ const startAndWatchJob = (job: Job) => {
     jobConfig.config.process[0].sqlite_db_path = path.join(TOOLKIT_ROOT, 'aitk_db.db');
     const processConfig = jobConfig.config.process[0];
     const isCloudCaptioner = processConfig.type === 'CloudCaptioner';
-    const providerOptions = (processConfig.caption.provider_options ||= {});
+    const providerOptions = getCloudCaptionProviderOptions(processConfig);
     const geminiBackend = String(providerOptions.backend || 'developer')
       .trim()
       .toLowerCase()

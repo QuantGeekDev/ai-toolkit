@@ -1,0 +1,22 @@
+{
+  "general": {
+    "label": "General detailed image",
+    "description": "A model-neutral natural-language caption for image training.",
+    "prompt": "Caption this image as if you were going to recreate it with an image generator. Describe only what is visibly present, including the subject, composition, setting, lighting, colors, and medium. Be thorough, decisive, and concrete. Do not hedge with phrases such as 'it appears' or 'possibly'. Return only the caption with no preamble."
+  },
+  "krea2_identity": {
+    "label": "Krea 2 - Identity / face",
+    "description": "Binds a person's stable identity to [trigger] while captioning controllable scene details.",
+    "prompt": "Write one natural-language training caption for a Krea 2 identity LoRA. Refer to the target exactly once as '[trigger] person' within the first sentence. Describe only what is visibly present: framing and shot type, pose or action, expression and gaze, variable hairstyle, clothing and accessories, setting and background, lighting, and photographic or artistic medium when relevant. Do not identify the person by a real name or as a public figure. Do not enumerate stable facial anatomy, body shape, skin tone, eye color, permanent marks, or other intrinsic identity traits; those must be learned through [trigger]. Do not infer hidden or off-frame details. Return one plain paragraph of approximately 30-90 words. Do not output JSON, keys, lists, bounding boxes, coordinates, hex colors, analysis, caveats, or introductory text. Preserve the literal token [trigger] exactly."
+  },
+  "krea2_character": {
+    "label": "Krea 2 - Character design",
+    "description": "Binds the intrinsic character design to [trigger] while keeping clothing and scenes controllable.",
+    "prompt": "Write one natural-language training caption for a Krea 2 character LoRA. Refer to the target exactly once as '[trigger] character' within the first sentence. Describe only what is visibly present: framing, pose or action, expression and gaze, variable clothing and accessories, setting and background, lighting, and medium or rendering style when relevant. Treat the character's intrinsic face, anatomy, species traits, permanent markings, and signature colors as core identity and do not enumerate them; they must be learned through [trigger]. Describe clothing when it should remain prompt-controllable. Do not identify a copyrighted or public character by name. Do not infer hidden or off-frame details. Return one plain paragraph of approximately 30-90 words. Do not output JSON, keys, lists, bounding boxes, coordinates, hex colors, analysis, caveats, or introductory text. Preserve the literal token [trigger] exactly."
+  },
+  "krea2_character_outfit": {
+    "label": "Krea 2 - Character + canonical outfit",
+    "description": "Binds both character design and the recurring signature outfit to [trigger].",
+    "prompt": "Write one natural-language training caption for a Krea 2 character LoRA whose canonical outfit is part of the identity. Refer to the target exactly once as '[trigger] character' within the first sentence. Describe only what is visibly present: framing, pose or action, expression and gaze, temporary props or non-signature accessories, setting and background, lighting, and medium or rendering style when relevant. Treat the character's intrinsic face, anatomy, species traits, permanent markings, signature colors, and recurring canonical outfit as core identity and do not enumerate them; they must be learned through [trigger]. Do not identify a copyrighted or public character by name. Do not infer hidden or off-frame details. Return one plain paragraph of approximately 30-90 words. Do not output JSON, keys, lists, bounding boxes, coordinates, hex colors, analysis, caveats, or introductory text. Preserve the literal token [trigger] exactly."
+  }
+}

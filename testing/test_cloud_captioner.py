@@ -67,6 +67,34 @@ class CodedError(Exception):
 
 
 class CloudCaptionConfigTests(unittest.TestCase):
+    def test_resolves_caption_prompt_template_when_prompt_is_omitted(self):
+        with tempfile.TemporaryDirectory() as folder:
+            config = CloudCaptionConfig(
+                path_to_caption=folder,
+                caption_prompt_template="krea2_identity",
+            )
+            self.assertEqual(config.caption_prompt_template, "krea2_identity")
+            self.assertIn("Krea 2 identity LoRA", config.caption_prompt)
+            self.assertIn("[trigger] person", config.caption_prompt)
+
+    def test_explicit_caption_prompt_overrides_template_fallback(self):
+        with tempfile.TemporaryDirectory() as folder:
+            config = CloudCaptionConfig(
+                path_to_caption=folder,
+                caption_prompt_template="krea2_identity",
+                caption_prompt="My exact prompt",
+            )
+            self.assertEqual(config.caption_prompt, "My exact prompt")
+
+    def test_unknown_caption_prompt_template_is_rejected_when_used(self):
+        with tempfile.TemporaryDirectory() as folder:
+            with self.assertRaisesRegex(ValueError, "Unknown caption_prompt_template"):
+                CloudCaptionConfig(
+                    path_to_caption=folder,
+                    caption_prompt_template="missing",
+                    caption_prompt="",
+                )
+
     def test_defaults_are_high_reasoning_and_cloud_safe(self):
         with tempfile.TemporaryDirectory() as folder:
             config = CloudCaptionConfig(path_to_caption=folder)

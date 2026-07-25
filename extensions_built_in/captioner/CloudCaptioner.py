@@ -20,6 +20,7 @@ from .providers import (
     create_provider,
 )
 from .providers.image_utils import prepare_image
+from .prompts.caption_prompt_templates import get_caption_prompt_template
 
 
 class CloudCaptionConfig:
@@ -34,8 +35,12 @@ class CloudCaptionConfig:
         self.path_to_caption = kwargs.get("path_to_caption")
         self.caption_extension = str(kwargs.get("caption_extension", "txt")).lstrip(".")
         self.recaption = bool(kwargs.get("recaption", False))
+        self.caption_prompt_template = str(kwargs.get("caption_prompt_template") or "").strip()
+        raw_caption_prompt = kwargs.get("caption_prompt")
+        if not str(raw_caption_prompt or "").strip() and self.caption_prompt_template:
+            raw_caption_prompt = get_caption_prompt_template(self.caption_prompt_template)
         self.caption_prompt = str(
-            kwargs.get("caption_prompt") or "Describe this image in detail for image-model training."
+            raw_caption_prompt or "Describe this image in detail for image-model training."
         ).strip()
         self.concurrency = int(kwargs.get("concurrency", 2))
         self.request_timeout_seconds = int(kwargs.get("request_timeout_seconds", 120))

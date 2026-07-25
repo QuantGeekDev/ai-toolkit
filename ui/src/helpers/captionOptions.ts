@@ -1,4 +1,5 @@
 import { GroupedSelectOption, SelectOption } from '@/types';
+import { captionPromptTemplates } from '@/helpers/captionPromptTemplates';
 
 type CaptionGroup = 'image' | 'music' | 'cloud';
 type AdditionalSections =
@@ -17,6 +18,7 @@ export interface CaptionOption {
   provider?: string;
   hasMultiLinePrompts?: boolean;
   minNewTokens?: number;
+  supportsPromptTemplates?: boolean;
   defaults?: { [key: string]: any };
   additionalSections?: AdditionalSections[];
   name_or_path_options?: SelectOption[];
@@ -30,8 +32,7 @@ const extensionsImage = ['jpg', 'jpeg', 'png', 'bmp', 'webp'];
 
 const defaultExtensions = [...extensionsImage];
 
-const defaultImageCaptionPrompt =
-  'Caption this image as if you were going to try to generate it with an image generator. Be thurough and describe everything in the image. Be decisive by stating things as they are. Do not say things like "It appears that" Or "possibly". Start out with things like "A person on the beach" or "A black dragon". No preamble. Just get to the point.';
+const defaultImageCaptionPrompt = captionPromptTemplates.general.prompt;
 
 // Editable ADDITIONAL INSTRUCTIONS block injected into the Ideogram system prompt.
 // Users can tweak this for dataset-specific guidance without altering the fixed
@@ -46,12 +47,14 @@ export const captionerTypes: CaptionOption[] = [
     group: 'cloud',
     executionTarget: 'cloud',
     provider: 'gemini',
+    supportsPromptTemplates: true,
     defaults: {
       'config.process[0].caption.provider': ['gemini', undefined],
       'config.process[0].caption.model': ['gemini-3.1-pro-preview', undefined],
       'config.process[0].caption.model_name_or_path': [undefined, defaultNameOrPath],
       'config.process[0].caption.extensions': [extensionsImage, defaultExtensions],
       'config.process[0].caption.caption_prompt': [defaultImageCaptionPrompt, undefined],
+      'config.process[0].caption.caption_prompt_template': ['general', undefined],
       'config.process[0].caption.max_res': [2048, undefined],
       'config.process[0].caption.max_output_tokens': [2048, undefined],
       'config.process[0].caption.concurrency': [2, undefined],
@@ -91,10 +94,12 @@ export const captionerTypes: CaptionOption[] = [
     label: 'Qwen3-VL',
     group: 'image',
     executionTarget: 'local_gpu',
+    supportsPromptTemplates: true,
     defaults: {
       'config.process[0].caption.model_name_or_path': ['Qwen/Qwen3-VL-8B-Instruct', defaultNameOrPath],
       'config.process[0].caption.extensions': [extensionsImage, defaultExtensions],
       'config.process[0].caption.caption_prompt': [defaultImageCaptionPrompt, undefined],
+      'config.process[0].caption.caption_prompt_template': ['general', undefined],
       'config.process[0].caption.max_res': [512, undefined],
       'config.process[0].caption.max_new_tokens': [128, undefined],
     },

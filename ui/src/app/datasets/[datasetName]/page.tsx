@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState, use, useMemo, useCallback, useRef } from 'react';
-import { LuImageOff, LuLoader, LuBan } from 'react-icons/lu';
+import { LuImageOff, LuLoader, LuBan, LuTrash2 } from 'react-icons/lu';
 import { FaChevronLeft } from 'react-icons/fa';
 import { VirtuosoGrid } from 'react-virtuoso';
 import DatasetImageCard from '@/components/DatasetImageCard';
@@ -15,6 +15,7 @@ import { pathJoin } from '@/utils/basic';
 import AutoCaptionButton from '@/components/AutoCaptionButton';
 import CaptionMonitor from '@/components/CaptionMonitor';
 import { CreatableSelectInput } from '@/components/formInputs';
+import { openConfirm } from '@/components/ConfirmModal';
 
 export default function DatasetPage({ params }: { params: { datasetName: string } }) {
   const [imgList, setImgList] = useState<{ img_path: string }[]>([]);
@@ -28,6 +29,8 @@ export default function DatasetPage({ params }: { params: { datasetName: string 
   const [captionRefreshKeys, setCaptionRefreshKeys] = useState<Record<string, number>>({});
   const [scrollParent, setScrollParent] = useState<HTMLDivElement | null>(null);
   const [captionBarHeight, setCaptionBarHeight] = useState(0);
+  const [isResettingCaptions, setIsResettingCaptions] = useState(false);
+  const [captionResetMessage, setCaptionResetMessage] = useState<{ text: string; error: boolean } | null>(null);
   const scrollParentCallback = useCallback((el: HTMLDivElement | null) => setScrollParent(el), []);
   const isRefreshingRef = useRef(false);
 
@@ -64,6 +67,45 @@ export default function DatasetPage({ params }: { params: { datasetName: string 
       refreshImageList(datasetName);
     }
   }, [datasetName]);
+
+  useEffect(() => {
+    if (!captionResetMessage) return;
+    const timeout = window.setTimeout(() => setCaptionResetMessage(null), 5000);
+    return () => window.clearTimeout(timeout);
+  }, [captionResetMessage]);
+
+  const handleResetCaptions = () => {
+    openConfirm({
+      title: 'Reset Dataset Captions',
+      message: `Delete every .${captionExt} caption paired with media in "${datasetName}"? Images, other caption extensions, unpaired files, and _controls are not changed. This cannot be undone.`,
+      type: 'danger',
+      confirmText: 'Reset Captions',
+      onConfirm: async () => {
+        setIsResettingCaptions(true);
+        setCaptionResetMessage(null);
+        try {
+          const response = await apiClient.post('/api/datasets/resetCaptions', {
+            datasetName,
+            captionExtension: captionExt,
+          });
+          const deleted = Number(response.data.deleted || 0);
+          const refreshKey = Date.now();
+          setCaptionRefreshKeys(Object.fromEntries(imgPaths.map(imgPath => [imgPath, refreshKey])));
+          setCaptionResetMessage({
+            text: deleted === 1 ? 'Deleted 1 caption.' : `Deleted ${deleted} captions.`,
+            error: false,
+          });
+        } catch (error: any) {
+          setCaptionResetMessage({
+            text: error.response?.data?.error || 'Failed to reset captions.',
+            error: true,
+          });
+        } finally {
+          setIsResettingCaptions(false);
+        }
+      },
+    });
+  };
 
   const PageInfoContent = useMemo(() => {
     let icon = null;
@@ -151,6 +193,25 @@ export default function DatasetPage({ params }: { params: { datasetName: string 
             captionExt={captionExt}
           />
           <Button
+            aria-label="Reset Captions"
+            className="inline-flex items-center gap-1 text-white bg-red-800 hover:bg-red-700 px-2 sm:px-3 py-1 rounded-md text-sm sm:text-base whitespace-nowrap disabled:cursor-not-allowed disabled:opacity-40"
+            onClick={handleResetCaptions}
+            disabled={isAutoCaptioning || isResettingCaptions || imgList.length === 0}
+            title={
+              isAutoCaptioning
+                ? 'Stop the active caption job before resetting captions'
+                : `Delete all .${captionExt} captions paired with this dataset's media`
+            }
+          >
+            {isResettingCaptions ? (
+              <LuLoader className="animate-spin" aria-hidden="true" />
+            ) : (
+              <LuTrash2 aria-hidden="true" />
+            )}
+            <span className="sm:hidden">Reset</span>
+            <span className="hidden sm:inline">Reset Captions</span>
+          </Button>
+          <Button
             className="text-white bg-slate-600 px-2 sm:px-3 py-1 rounded-md text-sm sm:text-base whitespace-nowrap"
             onClick={() => openImagesModal(datasetName, () => refreshImageList(datasetName))}
           >
@@ -159,6 +220,16 @@ export default function DatasetPage({ params }: { params: { datasetName: string 
           </Button>
         </div>
       </TopBar>
+      {captionResetMessage && (
+        <div
+          role="status"
+          className={`fixed right-4 top-16 z-20 rounded-md px-3 py-2 text-sm shadow-lg ${
+            captionResetMessage.error ? 'bg-red-950 text-red-200' : 'bg-green-950 text-green-200'
+          }`}
+        >
+          {captionResetMessage.text}
+        </div>
+      )}
       <MainContent ref={scrollParentCallback}>
         {PageInfoContent}
         {status === 'success' && imgList.length > 0 && scrollParent && (

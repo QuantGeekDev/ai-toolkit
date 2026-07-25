@@ -17,6 +17,11 @@ import {
   maxResOptions,
   quantizationOptions,
 } from '@/helpers/captionOptions';
+import {
+  captionPromptTemplateOptions,
+  detectCaptionPromptTemplate,
+  getCaptionPromptTemplate,
+} from '@/helpers/captionPromptTemplates';
 
 type Props = {
   jobConfig: CaptionJobConfig;
@@ -54,6 +59,10 @@ const CaptionSimpleJob: React.FC<Props> = ({
     jobConfig.config.process[0].caption.provider_options?.location || vertexLocation || 'global';
   const cloudConfigured =
     cloudBackend === 'vertex' ? vertexConfigured && Boolean(effectiveVertexProject) : geminiApiKeyConfigured;
+  const selectedPromptTemplateId =
+    jobConfig.config.process[0].caption.caption_prompt_template ||
+    detectCaptionPromptTemplate(jobConfig.config.process[0].caption.caption_prompt);
+  const selectedPromptTemplate = getCaptionPromptTemplate(selectedPromptTemplateId);
 
   return (
     <div className="text-sm text-gray-400">
@@ -338,14 +347,49 @@ const CaptionSimpleJob: React.FC<Props> = ({
       </div>
       {additionalSections.includes('caption.caption_prompt') && (
         <div className="mt-4">
-          <TextAreaInput
-            label="Caption Prompt"
-            value={jobConfig.config.process[0].caption.caption_prompt || ''}
-            onChange={value => {
-              setJobConfig(value, 'config.process[0].caption.caption_prompt');
-            }}
-            placeholder="Enter caption prompt"
-          />
+          {selectedCaptionOption?.supportsPromptTemplates && (
+            <>
+              <SelectInput
+                label="Caption Prompt Preset"
+                value={selectedPromptTemplateId}
+                onChange={value => {
+                  setJobConfig(value, 'config.process[0].caption.caption_prompt_template');
+                  const template = getCaptionPromptTemplate(value);
+                  if (template) {
+                    setJobConfig(template.prompt, 'config.process[0].caption.caption_prompt');
+                  }
+                }}
+                options={captionPromptTemplateOptions}
+              />
+              <p className="mt-2 text-xs text-gray-500">
+                {selectedPromptTemplate?.description ||
+                  'Write your own captioning instructions below. Selecting a preset replaces the prompt.'}
+              </p>
+              {selectedPromptTemplateId.startsWith('krea2_') && (
+                <p className="mt-1 text-xs text-blue-400">
+                  The generated caption keeps [trigger] literal so AI Toolkit can replace it with the training trigger.
+                </p>
+              )}
+            </>
+          )}
+          <div className={selectedCaptionOption?.supportsPromptTemplates ? 'mt-4' : ''}>
+            <TextAreaInput
+              label={
+                selectedCaptionOption?.name === 'Ideogram4Captioner' ? 'Additional Instructions' : 'Caption Prompt'
+              }
+              value={jobConfig.config.process[0].caption.caption_prompt || ''}
+              onChange={value => {
+                setJobConfig(value, 'config.process[0].caption.caption_prompt');
+                if (
+                  selectedCaptionOption?.supportsPromptTemplates &&
+                  value.trim() !== selectedPromptTemplate?.prompt.trim()
+                ) {
+                  setJobConfig('custom', 'config.process[0].caption.caption_prompt_template');
+                }
+              }}
+              placeholder="Enter caption prompt"
+            />
+          </div>
         </div>
       )}
     </div>
