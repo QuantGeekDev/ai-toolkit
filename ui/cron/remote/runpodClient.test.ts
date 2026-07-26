@@ -170,7 +170,7 @@ describe('RunPod client', () => {
       )
       .mockResolvedValueOnce(
         response({
-          workers: { idle: 0, initializing: 0, ready: 0, running: 0, throttled: 0, unhealthy: 0 },
+          workers: { idle: 0, initializing: 0, ready: 0, running: 0, throttled: 1, unhealthy: 0 },
         }),
       ) as any;
     const result = await new RunPodClient(

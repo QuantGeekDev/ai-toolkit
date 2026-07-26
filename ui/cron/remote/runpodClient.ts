@@ -195,7 +195,9 @@ export class RunPodClient {
       health.workers && typeof health.workers === 'object'
         ? (health.workers as Record<string, unknown>)
         : undefined;
-    const healthWorkerStates = ['idle', 'initializing', 'ready', 'running', 'throttled', 'unhealthy'] as const;
+    // `throttled` is a scheduler/cooldown state that RunPod can retain after
+    // the underlying worker Pod has been terminated. It is not a live worker.
+    const healthWorkerStates = ['idle', 'initializing', 'ready', 'running', 'unhealthy'] as const;
     const healthWorkerCounts = healthWorkers
       ? healthWorkerStates.map(state => Number(healthWorkers[state])).filter(Number.isFinite)
       : [];
