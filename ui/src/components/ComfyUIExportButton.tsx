@@ -22,11 +22,16 @@ type ExportInfo = {
 };
 
 type ExportResult = {
-  checkpoint: string;
-  loraName: string;
+  mode: 'comparison' | 'single';
+  checkpoints: string[];
+  loraNames: string[];
+  checkpoint?: string;
+  loraName?: string;
   workflowName: string;
   comfyUiUrl: string;
 };
+
+type ExportMode = 'comparison' | 'single';
 
 const errorMessage = (error: any, fallback: string) => error?.response?.data?.error || error?.message || fallback;
 
@@ -40,6 +45,7 @@ export default function ComfyUIExportButton({ job, iconClassName }: { job: Job; 
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [info, setInfo] = useState<ExportInfo | null>(null);
+  const [exportMode, setExportMode] = useState<ExportMode>('comparison');
   const [checkpoint, setCheckpoint] = useState('');
   const [error, setError] = useState('');
   const [result, setResult] = useState<ExportResult | null>(null);
@@ -47,6 +53,7 @@ export default function ComfyUIExportButton({ job, iconClassName }: { job: Job; 
   const open = async () => {
     setIsOpen(true);
     setLoading(true);
+    setExportMode('comparison');
     setError('');
     setResult(null);
     try {
@@ -62,12 +69,15 @@ export default function ComfyUIExportButton({ job, iconClassName }: { job: Job; 
   };
 
   const createWorkflow = async () => {
-    if (!checkpoint || submitting) return;
+    if ((exportMode === 'single' && !checkpoint) || submitting) return;
     setSubmitting(true);
     setError('');
     setResult(null);
     try {
-      const response = await apiClient.post<ExportResult>(`/api/jobs/${job.id}/comfyui`, { checkpoint });
+      const response = await apiClient.post<ExportResult>(`/api/jobs/${job.id}/comfyui`, {
+        mode: exportMode,
+        checkpoint: exportMode === 'single' ? checkpoint : undefined,
+      });
       setResult(response.data);
     } catch (requestError) {
       setError(errorMessage(requestError, 'Could not create the ComfyUI workflow.'));
@@ -82,8 +92,8 @@ export default function ComfyUIExportButton({ job, iconClassName }: { job: Job; 
         type="button"
         onClick={open}
         className="ml-1 sm:ml-2 text-gray-200 hover:text-white"
-        title="Send a checkpoint to ComfyUI"
-        aria-label="Send a checkpoint to ComfyUI"
+        title="Create a ComfyUI checkpoint comparison"
+        aria-label="Create a ComfyUI checkpoint comparison"
       >
         <Workflow className={iconClassName} />
       </button>
@@ -98,8 +108,9 @@ export default function ComfyUIExportButton({ job, iconClassName }: { job: Job; 
       >
         <div className="space-y-4 text-sm text-gray-200">
           <p>
-            Select a saved training step. AI Toolkit will copy it into ComfyUI&apos;s LoRA library and create a ready
-            evaluation workflow. The original training file stays in place.
+            AI Toolkit can copy every saved training checkpoint into ComfyUI&apos;s LoRA library and create one workflow
+            that generates the no-LoRA baseline and every checkpoint together. The original training files stay in
+            place.
           </p>
           <div className="rounded-lg border border-blue-800 bg-blue-950/40 px-3 py-2 text-blue-100">
             Inside the generated workflow, use the highlighted <strong>Aspect Ratio</strong> selector to switch between
@@ -121,24 +132,71 @@ export default function ComfyUIExportButton({ job, iconClassName }: { job: Job; 
                 </p>
               )}
               {info.available && info.checkpoints.length > 0 && (
-                <label className="block">
-                  <span className="mb-1 block font-medium text-gray-100">Checkpoint</span>
-                  <select
-                    value={checkpoint}
-                    onChange={event => {
-                      setCheckpoint(event.target.value);
-                      setResult(null);
-                    }}
-                    disabled={submitting}
-                    className="w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                  >
-                    {info.checkpoints.map(item => (
-                      <option key={item.fileName} value={item.fileName}>
-                        {item.label} ({fileSize(item.size)})
-                      </option>
-                    ))}
-                  </select>
-                </label>
+                <div className="space-y-3">
+                  <fieldset className="space-y-2">
+                    <legend className="mb-1 font-medium text-gray-100">Export</legend>
+                    <label className="flex cursor-pointer gap-3 rounded-lg border border-blue-700 bg-blue-950/30 px-3 py-3">
+                      <input
+                        type="radio"
+                        name={`comfyui-export-${job.id}`}
+                        value="comparison"
+                        checked={exportMode === 'comparison'}
+                        onChange={() => {
+                          setExportMode('comparison');
+                          setResult(null);
+                        }}
+                        disabled={submitting}
+                        className="mt-1"
+                      />
+                      <span>
+                        <span className="block font-semibold text-white">All checkpoints + No LoRA (default)</span>
+                        <span className="block text-gray-300">
+                          One workflow with {info.checkpoints.length + 1} matched branches: a clean baseline and all{' '}
+                          {info.checkpoints.length} saved checkpoints.
+                        </span>
+                      </span>
+                    </label>
+                    <label className="flex cursor-pointer gap-3 rounded-lg border border-gray-700 px-3 py-3">
+                      <input
+                        type="radio"
+                        name={`comfyui-export-${job.id}`}
+                        value="single"
+                        checked={exportMode === 'single'}
+                        onChange={() => {
+                          setExportMode('single');
+                          setResult(null);
+                        }}
+                        disabled={submitting}
+                        className="mt-1"
+                      />
+                      <span>
+                        <span className="block font-semibold text-white">One checkpoint only</span>
+                        <span className="block text-gray-300">Create the smaller single-checkpoint workflow.</span>
+                      </span>
+                    </label>
+                  </fieldset>
+
+                  {exportMode === 'single' && (
+                    <label className="block">
+                      <span className="mb-1 block font-medium text-gray-100">Checkpoint</span>
+                      <select
+                        value={checkpoint}
+                        onChange={event => {
+                          setCheckpoint(event.target.value);
+                          setResult(null);
+                        }}
+                        disabled={submitting}
+                        className="w-full rounded-md border border-gray-600 bg-gray-800 px-3 py-2 text-gray-100 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                      >
+                        {info.checkpoints.map(item => (
+                          <option key={item.fileName} value={item.fileName}>
+                            {item.label} ({fileSize(item.size)})
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  )}
+                </div>
               )}
             </>
           )}
@@ -155,9 +213,16 @@ export default function ComfyUIExportButton({ job, iconClassName }: { job: Job; 
               <p>
                 Workflow: <span className="font-mono text-xs">{result.workflowName}</span>
               </p>
-              <p>
-                LoRA: <span className="font-mono text-xs">{result.loraName}</span>
-              </p>
+              {result.mode === 'comparison' ? (
+                <p>
+                  Copied {result.checkpoints.length} checkpoints. The workflow includes{' '}
+                  <strong>{result.checkpoints.length + 1} branches</strong> including No LoRA.
+                </p>
+              ) : (
+                <p>
+                  LoRA: <span className="font-mono text-xs">{result.loraName}</span>
+                </p>
+              )}
               <p className="text-green-200">
                 Open ComfyUI, choose <strong>Workflows</strong>, then open the workflow above.
               </p>
@@ -187,10 +252,22 @@ export default function ComfyUIExportButton({ job, iconClassName }: { job: Job; 
               <button
                 type="button"
                 onClick={createWorkflow}
-                disabled={loading || submitting || !info?.available || !checkpoint}
+                disabled={
+                  loading ||
+                  submitting ||
+                  !info?.available ||
+                  !info.checkpoints.length ||
+                  (exportMode === 'single' && !checkpoint)
+                }
                 className="rounded-md bg-blue-700 px-4 py-2 font-medium text-white hover:bg-blue-600 disabled:cursor-not-allowed disabled:opacity-50"
               >
-                {submitting ? 'Copying checkpoint…' : 'Create workflow'}
+                {submitting
+                  ? exportMode === 'comparison'
+                    ? 'Copying all checkpoints…'
+                    : 'Copying checkpoint…'
+                  : exportMode === 'comparison'
+                    ? 'Create comparison workflow'
+                    : 'Create single workflow'}
               </button>
             )}
           </div>

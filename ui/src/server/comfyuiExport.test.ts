@@ -2,7 +2,14 @@ import { afterEach, describe, expect, it } from 'vitest';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-import { buildKrea2Workflow, exportCheckpointToComfyUi, isKrea2JobConfig, listKrea2Checkpoints } from './comfyuiExport';
+import {
+  buildKrea2ComparisonWorkflow,
+  buildKrea2Workflow,
+  exportAllCheckpointsToComfyUi,
+  exportCheckpointToComfyUi,
+  isKrea2JobConfig,
+  listKrea2Checkpoints,
+} from './comfyuiExport';
 
 const temporaryRoots: string[] = [];
 
@@ -103,6 +110,59 @@ describe('Krea 2 ComfyUI export', () => {
     ]);
   });
 
+  it('builds one matched comparison with a no-LoRA baseline and every checkpoint', () => {
+    const checkpoints = [
+      {
+        fileName: 'test-job.safetensors',
+        label: 'Final',
+        size: 5,
+        step: 500,
+        isFinal: true,
+      },
+      {
+        fileName: 'test-job_000000250.safetensors',
+        label: 'Step 250',
+        size: 4,
+        step: 250,
+        isFinal: false,
+      },
+    ];
+    const loraNames = checkpoints.map(checkpoint => path.join('ai-toolkit', 'test-job', checkpoint.fileName));
+
+    const workflow = buildKrea2ComparisonWorkflow({
+      jobName: 'test-job',
+      checkpoints,
+      loraNames,
+      jobConfig: jobConfig(),
+    });
+
+    expect(workflow.groups?.map(group => group.title)).toEqual([
+      'test-job - SHARED SETTINGS (edit once, then Queue once)',
+      'NO LORA - BASELINE',
+      'FINAL - STEP 500',
+      'STEP 250',
+    ]);
+    expect(
+      workflow.nodes.filter(node => node.type === 'LoraLoaderModelOnly').map(node => node.widgets_values?.[0]),
+    ).toEqual(loraNames);
+    expect(workflow.nodes.filter(node => node.type === 'KSampler').map(node => node.widgets_values)).toEqual([
+      [123, 'fixed', 24, 3.5, 'res_multistep', 'simple', 1],
+      [123, 'fixed', 24, 3.5, 'res_multistep', 'simple', 1],
+      [123, 'fixed', 24, 3.5, 'res_multistep', 'simple', 1],
+    ]);
+    expect(workflow.nodes.find(node => node.id === 8)?.widgets_values).toEqual([
+      '9:16 (Portrait Widescreen)',
+      0.56,
+      16,
+    ]);
+    expect(workflow.nodes.filter(node => node.type === 'SaveImage').map(node => node.widgets_values?.[0])).toEqual([
+      'ai-toolkit/test-job/all-checkpoints/no-lora',
+      'ai-toolkit/test-job/all-checkpoints/final-step-500',
+      'ai-toolkit/test-job/all-checkpoints/step-250',
+    ]);
+    expect(workflow.links?.filter(link => link[1] === 3).length).toBe(3);
+  });
+
   it('copies the checkpoint and writes a workflow into the configured ComfyUI folders', async () => {
     const trainingRoot = await makeRoot();
     const comfyRoot = await makeRoot();
@@ -133,6 +193,9 @@ describe('Krea 2 ComfyUI export', () => {
     });
 
     expect(result).toEqual({
+      mode: 'single',
+      checkpoints: ['test-job_000000250.safetensors'],
+      loraNames: [path.join('ai-toolkit', 'test-job', 'test-job_000000250.safetensors')],
       checkpoint: 'test-job_000000250.safetensors',
       loraName: path.join('ai-toolkit', 'test-job', 'test-job_000000250.safetensors'),
       workflowName: 'AI Toolkit - test-job - step-250.json',
@@ -161,6 +224,62 @@ describe('Krea 2 ComfyUI export', () => {
         checkpointFileName: 'test-job_000000250.safetensors',
       }),
     ).resolves.toEqual(result);
+  });
+
+  it('copies every checkpoint and writes the all-checkpoint comparison workflow', async () => {
+    const trainingRoot = await makeRoot();
+    const comfyRoot = await makeRoot();
+    const jobFolder = path.join(trainingRoot, 'test-job');
+    await fs.promises.mkdir(jobFolder);
+    await Promise.all([
+      fs.promises.writeFile(path.join(jobFolder, 'test-job.safetensors'), 'final-data'),
+      fs.promises.writeFile(path.join(jobFolder, 'test-job_000000250.safetensors'), 'step-data'),
+    ]);
+
+    const requiredFiles = [
+      path.join(comfyRoot, 'models', 'diffusion_models', 'krea2_raw_bf16.safetensors'),
+      path.join(comfyRoot, 'models', 'text_encoders', 'qwen3vl_4b_bf16.safetensors'),
+      path.join(comfyRoot, 'models', 'vae', 'qwen_image_vae.safetensors'),
+    ];
+    await fs.promises.mkdir(path.join(comfyRoot, 'models', 'loras'), { recursive: true });
+    await fs.promises.mkdir(path.join(comfyRoot, 'user', 'default', 'workflows'), { recursive: true });
+    for (const file of requiredFiles) {
+      await fs.promises.mkdir(path.dirname(file), { recursive: true });
+      await fs.promises.writeFile(file, 'model');
+    }
+
+    const result = await exportAllCheckpointsToComfyUi({
+      trainingRoot,
+      comfyRoot,
+      comfyUiUrl: 'https://comfy.example/',
+      jobName: 'test-job',
+      currentStep: 500,
+      jobConfig: jobConfig(),
+    });
+
+    expect(result).toEqual({
+      mode: 'comparison',
+      checkpoints: ['test-job.safetensors', 'test-job_000000250.safetensors'],
+      loraNames: [
+        path.join('ai-toolkit', 'test-job', 'test-job.safetensors'),
+        path.join('ai-toolkit', 'test-job', 'test-job_000000250.safetensors'),
+      ],
+      workflowName: 'AI Toolkit - test-job - all-checkpoints.json',
+      comfyUiUrl: 'https://comfy.example/',
+    });
+    await expect(
+      fs.promises.readFile(path.join(comfyRoot, 'models', 'loras', result.loraNames[0]), 'utf8'),
+    ).resolves.toBe('final-data');
+    await expect(
+      fs.promises.readFile(path.join(comfyRoot, 'models', 'loras', result.loraNames[1]), 'utf8'),
+    ).resolves.toBe('step-data');
+
+    const workflow = JSON.parse(
+      await fs.promises.readFile(path.join(comfyRoot, 'user', 'default', 'workflows', result.workflowName), 'utf8'),
+    );
+    expect(workflow.nodes.filter((node: { type: string }) => node.type === 'KSampler')).toHaveLength(3);
+    expect(workflow.nodes.filter((node: { type: string }) => node.type === 'LoraLoaderModelOnly')).toHaveLength(2);
+    expect(workflow.groups.map((group: { title: string }) => group.title)).toContain('NO LORA - BASELINE');
   });
 
   it('rejects checkpoint path traversal', async () => {

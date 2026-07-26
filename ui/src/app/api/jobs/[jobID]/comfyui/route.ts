@@ -3,6 +3,7 @@ import prisma from '@/server/prisma';
 import { getComfyUISettings, getTrainingFolder } from '@/server/settings';
 import {
   ComfyUiExportError,
+  exportAllCheckpointsToComfyUi,
   exportCheckpointToComfyUi,
   inspectComfyUiInstallation,
   isKrea2JobConfig,
@@ -47,18 +48,28 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
 export async function POST(request: NextRequest, { params }: { params: Promise<{ jobID: string }> }) {
   try {
     const { jobID } = await params;
-    const body = (await request.json()) as { checkpoint?: unknown };
+    const body = (await request.json()) as { mode?: unknown; checkpoint?: unknown };
     const job = await getJob(jobID);
     const [trainingRoot, comfyUi] = await Promise.all([getTrainingFolder(), getComfyUISettings()]);
-    const result = await exportCheckpointToComfyUi({
+    const mode = body.mode == null ? 'comparison' : body.mode;
+    if (mode !== 'comparison' && mode !== 'single') {
+      throw new ComfyUiExportError('Choose either the all-checkpoint comparison or a single checkpoint.');
+    }
+    const sharedOptions = {
       trainingRoot,
       comfyRoot: comfyUi.root,
       comfyUiUrl: comfyUi.url,
       jobName: job.name,
       currentStep: job.step,
       jobConfig: job.job_config,
-      checkpointFileName: typeof body.checkpoint === 'string' ? body.checkpoint : '',
-    });
+    };
+    const result =
+      mode === 'comparison'
+        ? await exportAllCheckpointsToComfyUi(sharedOptions)
+        : await exportCheckpointToComfyUi({
+            ...sharedOptions,
+            checkpointFileName: typeof body.checkpoint === 'string' ? body.checkpoint : '',
+          });
     return NextResponse.json(result);
   } catch (error) {
     return errorResponse(error);
