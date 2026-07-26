@@ -148,6 +148,71 @@ describe('RunPod client', () => {
     expect(result.errors.join(' ')).toContain('datacenters');
   });
 
+  it('ignores terminated worker records when health reports scale-to-zero', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        response([
+          {
+            id: 'endpoint-1',
+            workersMin: 0,
+            workersMax: 1,
+            gpuCount: 1,
+            idleTimeout: 5,
+            computeType: 'GPU',
+            networkVolumeId: 'volume-1',
+            dataCenterIds: ['EU-RO-1'],
+            gpuTypeIds: ['NVIDIA H100 80GB HBM3'],
+            workers: [{ id: 'terminated-worker-with-stale-rest-record' }],
+            template: { image: config.workerImageDigest, env: { AITK_WORKER_IMAGE_DIGEST: config.workerImageDigest } },
+          },
+        ]),
+      )
+      .mockResolvedValueOnce(
+        response({
+          workers: { idle: 0, initializing: 0, ready: 0, running: 0, throttled: 0, unhealthy: 0 },
+        }),
+      ) as any;
+    const result = await new RunPodClient(
+      config,
+      fetchMock,
+      async () => undefined,
+      () => 0,
+    ).preflight();
+    expect(result).toMatchObject({ ok: true, errors: [] });
+  });
+
+  it('falls back to endpoint worker records when health omits worker counts', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        response([
+          {
+            id: 'endpoint-1',
+            workersMin: 0,
+            workersMax: 1,
+            gpuCount: 1,
+            idleTimeout: 5,
+            computeType: 'GPU',
+            networkVolumeId: 'volume-1',
+            dataCenterIds: ['EU-RO-1'],
+            gpuTypeIds: ['NVIDIA H100 80GB HBM3'],
+            workers: [{ id: 'worker-1' }],
+            template: { image: config.workerImageDigest, env: { AITK_WORKER_IMAGE_DIGEST: config.workerImageDigest } },
+          },
+        ]),
+      )
+      .mockResolvedValueOnce(response({ workers: {} })) as any;
+    const result = await new RunPodClient(
+      config,
+      fetchMock,
+      async () => undefined,
+      () => 0,
+    ).preflight();
+    expect(result.ok).toBe(false);
+    expect(result.errors.join(' ')).toContain('1 active worker');
+  });
+
   it('maps authentication failures without exposing response credentials', async () => {
     const fetchMock = vi.fn().mockResolvedValue(response({ error: `bad rpa_${'z'.repeat(32)}` }, 401)) as any;
     const client = new RunPodClient(

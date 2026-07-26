@@ -191,6 +191,16 @@ export class RunPodClient {
     const gpuIds = Array.isArray(rawGpuIds) ? rawGpuIds : [rawGpuIds];
     const gpuText = JSON.stringify(gpuIds).toUpperCase();
     const workers = Array.isArray(endpoint.workers) ? endpoint.workers : [];
+    const healthWorkers =
+      health.workers && typeof health.workers === 'object'
+        ? (health.workers as Record<string, unknown>)
+        : undefined;
+    const healthWorkerStates = ['idle', 'initializing', 'ready', 'running', 'throttled', 'unhealthy'] as const;
+    const healthWorkerCounts = healthWorkers
+      ? healthWorkerStates.map(state => Number(healthWorkers[state])).filter(Number.isFinite)
+      : [];
+    const activeWorkerCount =
+      healthWorkerCounts.length > 0 ? healthWorkerCounts.reduce((total, count) => total + count, 0) : workers.length;
     const endpointRegionsRaw =
       endpoint.dataCenterIds ?? endpoint.data_center_ids ?? endpoint.dataCenterId ?? endpoint.data_center_id ?? [];
     const endpointRegions = (
@@ -213,9 +223,12 @@ export class RunPodClient {
     if (!gpuText.includes('H100')) errors.push('RunPod endpoint must request an H100 GPU.');
     if (gpuIds.length > 1)
       errors.push('RunPod endpoint has GPU fallbacks; strict H100 mode permits one GPU type only.');
-    if (workers.length > 0)
+    // RunPod's REST endpoint can retain terminated worker records after the Pod
+    // has disappeared. The v2 health response is the authoritative live count;
+    // only fall back to the REST array when health does not expose worker counts.
+    if (activeWorkerCount > 0)
       errors.push(
-        `RunPod endpoint already has ${workers.length} active worker(s); wait for scale-to-zero before submitting.`,
+        `RunPod endpoint already has ${activeWorkerCount} active worker(s); wait for scale-to-zero before submitting.`,
       );
     if (endpointRegions.length && !endpointRegions.includes(this.config.s3Region.toUpperCase())) {
       errors.push('RunPod endpoint datacenters do not include the network volume S3 region.');
