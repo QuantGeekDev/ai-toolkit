@@ -34,7 +34,8 @@ $dependencyFiles = @(
 $dependencyIdentity = ($dependencyFiles | ForEach-Object { "$(Split-Path $_ -Leaf):$((Get-FileHash -Algorithm SHA256 $_).Hash.ToLowerInvariant())" }) -join "`n"
 $sha = [System.Security.Cryptography.SHA256]::Create()
 try {
-  $dependencyLock = [Convert]::ToHexString($sha.ComputeHash([Text.Encoding]::UTF8.GetBytes($dependencyIdentity))).ToLowerInvariant()
+  $dependencyBytes = $sha.ComputeHash([Text.Encoding]::UTF8.GetBytes($dependencyIdentity))
+  $dependencyLock = [BitConverter]::ToString($dependencyBytes).Replace('-', '').ToLowerInvariant()
 } finally {
   $sha.Dispose()
 }
