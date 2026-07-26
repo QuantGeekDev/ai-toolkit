@@ -135,7 +135,13 @@ export default function ComfyUIExportButton({ job, iconClassName }: { job: Job; 
                 <div className="space-y-3">
                   <fieldset className="space-y-2">
                     <legend className="mb-1 font-medium text-gray-100">Export</legend>
-                    <label className="flex cursor-pointer gap-3 rounded-lg border border-blue-700 bg-blue-950/30 px-3 py-3">
+                    <label
+                      className={`flex cursor-pointer gap-3 rounded-lg border px-3 py-3 ${
+                        exportMode === 'comparison'
+                          ? 'border-blue-700 bg-blue-950/30'
+                          : 'border-gray-700 bg-transparent'
+                      }`}
+                    >
                       <input
                         type="radio"
                         name={`comfyui-export-${job.id}`}
@@ -156,7 +162,11 @@ export default function ComfyUIExportButton({ job, iconClassName }: { job: Job; 
                         </span>
                       </span>
                     </label>
-                    <label className="flex cursor-pointer gap-3 rounded-lg border border-gray-700 px-3 py-3">
+                    <label
+                      className={`flex cursor-pointer gap-3 rounded-lg border px-3 py-3 ${
+                        exportMode === 'single' ? 'border-blue-700 bg-blue-950/30' : 'border-gray-700 bg-transparent'
+                      }`}
+                    >
                       <input
                         type="radio"
                         name={`comfyui-export-${job.id}`}
