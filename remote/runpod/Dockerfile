@@ -2,8 +2,9 @@ ARG BASE_IMAGE
 FROM ${BASE_IMAGE}
 
 ARG AITK_GIT_COMMIT
+ARG AITK_GIT_REMOTE
 ARG AITK_DEPENDENCY_LOCK_SHA256
-LABEL org.opencontainers.image.source="https://github.com/ostris/ai-toolkit" \
+LABEL org.opencontainers.image.source="${AITK_GIT_REMOTE}" \
       org.opencontainers.image.revision="${AITK_GIT_COMMIT}" \
       ai.toolkit.dependency-lock-sha256="${AITK_DEPENDENCY_LOCK_SHA256}"
 

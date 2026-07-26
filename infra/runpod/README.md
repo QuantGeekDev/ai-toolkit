@@ -66,6 +66,11 @@ five seconds, one strict H100 GPU type, and the network volume attached. This
 avoids idle GPU billing; the network volume itself continues to incur storage
 charges.
 
+If registry authorization is not ready yet, `build_worker.ps1 -BuildOnly`
+builds and tags the exact Linux/AMD64 worker locally without attempting a
+push. Run `docker push <tag>` after authorization, then record the registry's
+immutable digest; a local image ID is not a valid endpoint identity.
+
 Official API references:
 
 - [Create network volume](https://docs.runpod.io/api-reference/network-volumes/POST/networkvolumes)

@@ -2,7 +2,8 @@ param(
   [Parameter(Mandatory = $true)]
   [string]$ImageTag,
   [Parameter(Mandatory = $true)]
-  [string]$BaseImageDigest
+  [string]$BaseImageDigest,
+  [switch]$BuildOnly
 )
 
 $ErrorActionPreference = 'Stop'
@@ -20,6 +21,10 @@ if ($LASTEXITCODE -ne 0) { throw 'Could not inspect the Git worktree.' }
 if ($status) { throw 'Worker images must be built from a clean committed worktree.' }
 $commit = git -C $repositoryRoot rev-parse HEAD
 if ($LASTEXITCODE -ne 0 -or $commit -notmatch '^[0-9a-f]{40}$') { throw 'Could not resolve the source commit.' }
+$remotes = @(git -C $repositoryRoot remote)
+$sourceRemoteName = if ($remotes -contains 'fork') { 'fork' } else { 'origin' }
+$sourceRemote = git -C $repositoryRoot remote get-url $sourceRemoteName
+if ($LASTEXITCODE -ne 0 -or -not $sourceRemote) { throw 'Could not resolve the source repository URL.' }
 
 $dependencyFiles = @(
   (Join-Path $repositoryRoot 'requirements.txt'),
@@ -39,10 +44,15 @@ docker build --pull=false `
   --file (Join-Path $repositoryRoot 'remote\runpod\Dockerfile') `
   --build-arg "BASE_IMAGE=$BaseImageDigest" `
   --build-arg "AITK_GIT_COMMIT=$commit" `
+  --build-arg "AITK_GIT_REMOTE=$sourceRemote" `
   --build-arg "AITK_DEPENDENCY_LOCK_SHA256=$dependencyLock" `
   --tag $ImageTag `
   $repositoryRoot
 if ($LASTEXITCODE -ne 0) { throw 'Docker build failed.' }
+if ($BuildOnly) {
+  Write-Output $ImageTag
+  return
+}
 docker push $ImageTag
 if ($LASTEXITCODE -ne 0) { throw 'Docker push failed.' }
 $repoDigest = docker inspect --format='{{index .RepoDigests 0}}' $ImageTag
