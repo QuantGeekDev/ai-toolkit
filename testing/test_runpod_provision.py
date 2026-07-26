@@ -7,10 +7,12 @@ import urllib.error
 from pathlib import Path
 from unittest import mock
 
-from remote.runpod.provision import ProvisionError, ProvisionSpec, RunPodRestClient, provision
+from remote.runpod.provision import ProvisionError, ProvisionSpec, RunPodRestClient, _template_body, provision
 
 
 IMAGE = f"ghcr.io/example/aitk@sha256:{'a' * 64}"
+SOURCE_REPOSITORY = "https://github.com/QuantGeekDev/ai-toolkit.git"
+SOURCE_COMMIT = "287ab41f4024ab367b15b037878e0fc917391b7e"
 
 
 def spec() -> ProvisionSpec:
@@ -88,6 +90,7 @@ class RunPodProvisionTests(unittest.TestCase):
                     "imageName": desired.worker_image,
                     "containerDiskInGb": desired.container_disk_gb,
                     "isServerless": True,
+                    "dockerStartCmd": [],
                     "env": {
                         "AITK_REQUIRE_H100": "1",
                         "AITK_WORKER_IMAGE_DIGEST": desired.worker_image,
@@ -118,6 +121,51 @@ class RunPodProvisionTests(unittest.TestCase):
         result = provision(client, desired, apply=True)
         self.assertEqual(result["actions"], ["reuse network volume", "reuse worker template", "reuse endpoint"])
         self.assertEqual(client.created, [])
+
+    def test_bootstrap_template_fetches_and_verifies_exact_commit(self):
+        desired = ProvisionSpec(
+            **{
+                **spec().__dict__,
+                "source_repository": SOURCE_REPOSITORY,
+                "source_commit": SOURCE_COMMIT,
+            }
+        )
+        template = _template_body(desired)
+        command = template["dockerStartCmd"]
+        self.assertEqual(command[:2], ["bash", "-lc"])
+        self.assertIn(f"git fetch --depth 1 {SOURCE_REPOSITORY} {SOURCE_COMMIT}", command[2])
+        self.assertIn('test "$(git rev-parse FETCH_HEAD)"', command[2])
+        self.assertIn("exec python -u remote/runpod/handler.py", command[2])
+        self.assertEqual(template["env"]["AITK_SOURCE_COMMIT"], SOURCE_COMMIT)
+        self.assertEqual(template["env"]["PYTHONPATH"], "/app/ai-toolkit")
+        self.assertEqual(template["imageName"], IMAGE)
+
+    def test_bootstrap_command_drift_is_a_hard_failure(self):
+        desired = ProvisionSpec(
+            **{
+                **spec().__dict__,
+                "source_repository": SOURCE_REPOSITORY,
+                "source_commit": SOURCE_COMMIT,
+            }
+        )
+        template = _template_body(desired)
+        template.update({"id": "template-id", "dockerStartCmd": ["bash", "-lc", "echo mutable"]})
+        client = FakeClient(
+            {
+                "networkvolumes": [
+                    {
+                        "id": "volume-id",
+                        "name": desired.volume_name,
+                        "dataCenterId": desired.datacenter_id,
+                        "size": desired.volume_size_gb,
+                    }
+                ],
+                "templates": [template],
+                "endpoints": [],
+            }
+        )
+        with self.assertRaisesRegex(ProvisionError, "template dockerStartCmd"):
+            provision(client, desired, apply=True)
 
     def test_existing_resource_drift_is_a_hard_failure(self):
         desired = spec()

@@ -15,8 +15,9 @@ state. Re-evaluate the provider before replacing this REST bootstrap:
 
 ## Prerequisites
 
-1. Build and push `remote/runpod/Dockerfile`, recording its immutable
-   `image@sha256:...` registry digest.
+1. Choose one of the worker packaging modes below. Both pin an immutable base
+   image. The bootstrap mode additionally pins and verifies one exact public
+   Git commit at worker startup.
 2. In the RunPod console, create a secret named `aitk_hf_read` containing a
    read-only Hugging Face token. The template stores only the RunPod secret
    reference.
@@ -45,6 +46,23 @@ python remote/runpod/provision.py `
   --datacenter-id EU-RO-1 `
   --worker-image ghcr.io/OWNER/ai-toolkit-runpod@sha256:DIGEST
 ```
+
+To avoid republishing Ostris's large base image, use its immutable digest and
+bootstrap this fork from an exact public commit. The worker verifies the
+fetched SHA before installing the pinned `runpod` dependency and starting:
+
+```powershell
+python remote/runpod/provision.py `
+  --datacenter-id EU-RO-1 `
+  --worker-image docker.io/ostris/aitoolkit@sha256:f14841b070159cd2bd43af466b5cc9594b11560d5703d0993cc33ba7100ef270 `
+  --source-repository https://github.com/QuantGeekDev/ai-toolkit.git `
+  --source-commit 287ab41f4024ab367b15b037878e0fc917391b7e
+```
+
+Add `--apply --output .runpod-provision.json` after reviewing the plan. This
+mode adds roughly 15 seconds to a cold start in a local smoke test and avoids
+uploading an approximately 11 GB duplicate image. RunPod still has to pull the
+official base image when a host does not already cache it.
 
 The output contains no credentials. Copy the returned `aiToolkitSettings`
 values into **AI Toolkit > Settings > Remote GPU**, then set these process
