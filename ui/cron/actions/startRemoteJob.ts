@@ -10,9 +10,10 @@ import { safeErrorMessage } from '../remote/redact';
 import { RunPodClient, RunPodClientError } from '../remote/runpodClient';
 import { getAwsArchiveConfig, getRunPodConfig, validateRunPodConfig } from '../remote/settings';
 import {
+  expectedCheckpointStep,
   isInterruptedRemoteResumeCandidate,
   isRemoteResumeCandidate,
-  latestCheckpointStep,
+  remoteProgressStep,
 } from '../remote/resume';
 
 const digestRequest = (value: unknown): string =>
@@ -128,10 +129,17 @@ export default async function startRemoteJob(job: Job): Promise<void> {
         );
       }
       if (isInterruptedRemoteResumeCandidate(previous)) {
-        const resumeObjects = await store.list(toObjectKey(`${previous.run_prefix}/output`));
-        const checkpointStep = latestCheckpointStep(resumeObjects, job.name);
+        const parsedConfig = JSON.parse(job.job_config);
+        const saveEvery = Number(parsedConfig?.config?.process?.[0]?.save?.save_every);
+        const checkpointStep = expectedCheckpointStep(remoteProgressStep(previous), saveEvery);
         if (!checkpointStep) {
-          throw new Error('Resume blocked: the interrupted attempt has no complete checkpoint on the RunPod volume.');
+          throw new Error('Resume blocked: no checkpoint is expected before the interrupted attempt stopped.');
+        }
+        const checkpointName = `${job.name}_${String(checkpointStep).padStart(9, '0')}.safetensors`;
+        const checkpointKey = toObjectKey(`${previous.run_prefix}/output/${job.name}/${checkpointName}`);
+        const checkpoint = await store.head(checkpointKey);
+        if (!checkpoint || checkpoint.size <= 0) {
+          throw new Error(`Resume blocked: durable checkpoint ${checkpointName} is missing from the RunPod volume.`);
         }
         const nextSteps = Number(JSON.parse(job.job_config)?.config?.process?.[0]?.train?.steps);
         if (checkpointStep >= nextSteps) {

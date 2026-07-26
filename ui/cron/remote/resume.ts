@@ -35,17 +35,8 @@ export const isRemoteResumeCandidate = (execution: RemoteResumeCandidate): boole
   (['completed', 'stopped'].includes(execution.state) && execution.artifact_sync_state === 'complete') ||
   isInterruptedRemoteResumeCandidate(execution);
 
-export const latestCheckpointStep = (
-  objects: Array<{ key: string; size: number }>,
-  jobName: string,
-): number => {
-  const escapedName = jobName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const checkpoint = new RegExp(`(?:^|/)${escapedName}_(\\d{9})\\.safetensors$`, 'i');
-  let latest = 0;
-  for (const object of objects) {
-    if (object.size <= 0) continue;
-    const match = checkpoint.exec(object.key);
-    if (match) latest = Math.max(latest, Number(match[1]));
-  }
-  return latest;
+export const expectedCheckpointStep = (progressStep: number, saveEvery: number): number => {
+  if (!Number.isSafeInteger(progressStep) || progressStep < 1) return 0;
+  if (!Number.isSafeInteger(saveEvery) || saveEvery < 1) return 0;
+  return Math.floor(progressStep / saveEvery) * saveEvery;
 };

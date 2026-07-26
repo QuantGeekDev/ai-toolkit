@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   isInterruptedRemoteResumeCandidate,
   isRemoteResumeCandidate,
-  latestCheckpointStep,
+  expectedCheckpointStep,
   remoteProgressStep,
   type RemoteResumeCandidate,
 } from './resume';
@@ -40,17 +40,9 @@ describe('remote resume recovery', () => {
     expect(remoteProgressStep(execution({ progress_json: '{"step":1.5}' }))).toBe(0);
   });
 
-  it('selects the latest complete non-empty checkpoint for the exact job name', () => {
-    expect(
-      latestCheckpointStep(
-        [
-          { key: 'aitk/runs/x/output/analogv3/analogv3_000007250.safetensors', size: 10 },
-          { key: 'aitk/runs/x/output/analogv3/analogv3_000007500.safetensors', size: 10 },
-          { key: 'aitk/runs/x/output/analogv3/analogv3_000007750.safetensors', size: 0 },
-          { key: 'aitk/runs/x/output/other_000009000.safetensors', size: 10 },
-        ],
-        'analogv3',
-      ),
-    ).toBe(7500);
+  it('derives the last checkpoint expected from progress and save cadence', () => {
+    expect(expectedCheckpointStep(7563, 250)).toBe(7500);
+    expect(expectedCheckpointStep(249, 250)).toBe(0);
+    expect(expectedCheckpointStep(7563, 0)).toBe(0);
   });
 });
