@@ -50,6 +50,10 @@ docker build --pull=false `
   --tag $ImageTag `
   $repositoryRoot
 if ($LASTEXITCODE -ne 0) { throw 'Docker build failed.' }
+docker run --rm --entrypoint python $ImageTag -c "import jobs; from jobs import ExtensionJob; from toolkit.job import get_job; print('AI Toolkit job imports OK')"
+if ($LASTEXITCODE -ne 0) {
+  throw 'Worker smoke test failed: the image cannot import the AI Toolkit jobs package.'
+}
 if ($BuildOnly) {
   Write-Output $ImageTag
   return

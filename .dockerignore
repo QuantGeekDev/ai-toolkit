@@ -25,7 +25,6 @@ ui/dist/
 datasets/
 output/
 data/
-jobs/
 models/
 .cache/
 .tmp/
