@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/server/prisma';
+import { isRemoteResumeCandidate } from '@/server/remoteResume';
 
 export async function POST(request: NextRequest, { params }: { params: Promise<{ jobID: string }> }) {
   const { jobID } = await params;
@@ -8,15 +9,19 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   if (process.env.AI_TOOLKIT_RUNPOD_ENABLED !== '1' || job.execution_target !== 'runpod_serverless') {
     return NextResponse.json({ error: 'Remote continuation is unavailable.' }, { status: 409 });
   }
-  if (!['completed', 'stopped'].includes(job.status)) {
-    return NextResponse.json({ error: 'Only a completed or safely stopped job can be continued.' }, { status: 409 });
-  }
-  const previous = await prisma.remoteExecution.findFirst({
-    where: { job_id: jobID, state: { in: ['completed', 'stopped'] }, artifact_sync_state: 'complete' },
+  const attempts = await prisma.remoteExecution.findMany({
+    where: { job_id: jobID },
     orderBy: { attempt: 'desc' },
   });
+  const previous = attempts.find(isRemoteResumeCandidate);
+  if (!['completed', 'stopped', 'error'].includes(job.status) || (job.status === 'error' && !previous)) {
+    return NextResponse.json(
+      { error: 'Only a completed, safely stopped, or recoverable interrupted job can be continued.' },
+      { status: 409 },
+    );
+  }
   if (!previous)
-    return NextResponse.json({ error: 'No verified remote attempt is available to resume.' }, { status: 409 });
+    return NextResponse.json({ error: 'No verified or recoverable remote attempt is available to resume.' }, { status: 409 });
   const body = await request.json().catch(() => ({}));
   const additionalSteps = Math.trunc(Number(body.additionalSteps ?? 500));
   if (!Number.isSafeInteger(additionalSteps) || additionalSteps < 1 || additionalSteps > 100_000) {

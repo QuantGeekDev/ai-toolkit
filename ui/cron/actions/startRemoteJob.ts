@@ -9,6 +9,11 @@ import { bundleWorkerKey, runWorkerPrefix, toObjectKey } from '../remote/keys';
 import { safeErrorMessage } from '../remote/redact';
 import { RunPodClient, RunPodClientError } from '../remote/runpodClient';
 import { getAwsArchiveConfig, getRunPodConfig, validateRunPodConfig } from '../remote/settings';
+import {
+  isInterruptedRemoteResumeCandidate,
+  isRemoteResumeCandidate,
+  latestCheckpointStep,
+} from '../../src/server/remoteResume';
 
 const digestRequest = (value: unknown): string =>
   `sha256:${createHash('sha256').update(JSON.stringify(value)).digest('hex')}`;
@@ -45,12 +50,14 @@ export default async function startRemoteJob(job: Job): Promise<void> {
   const configurationErrors = validateRunPodConfig(config);
   if (configurationErrors.length) throw new Error(configurationErrors.join(' '));
   const client = new RunPodClient(config);
+  const store = new ArtifactStore(config);
 
   const latest = await prisma.remoteExecution.findFirst({ where: { job_id: job.id }, orderBy: { attempt: 'desc' } });
-  const previous = await prisma.remoteExecution.findFirst({
-    where: { job_id: job.id, state: { in: ['completed', 'stopped'] }, artifact_sync_state: 'complete' },
+  const priorAttempts = await prisma.remoteExecution.findMany({
+    where: { job_id: job.id },
     orderBy: { attempt: 'desc' },
   });
+  const previous = priorAttempts.find(isRemoteResumeCandidate);
   if (job.step > 0 && !previous) {
     throw new Error(
       'Local-to-remote or unverified resume is not supported. Clone this job as a new experiment with step 0, or resume from a verified remote attempt.',
@@ -101,7 +108,7 @@ export default async function startRemoteJob(job: Job): Promise<void> {
           throw new Error('The prior attempt has no recoverable immutable bundle for resume validation.');
         }
         priorBundlePath = path.join(config.bundleDirectory, `parent-${previous.bundle_archive_sha256}.tar.gz`);
-        const recovered = await new ArtifactStore(config).downloadFile(
+        const recovered = await store.downloadFile(
           previous.bundle_object_key,
           priorBundlePath,
           previous.bundle_archive_sha256,
@@ -119,6 +126,17 @@ export default async function startRemoteJob(job: Job): Promise<void> {
         throw new Error(
           'Resume blocked: dataset, model, trigger, seed, optimizer, network, precision, or another non-resumable setting changed.',
         );
+      }
+      if (isInterruptedRemoteResumeCandidate(previous)) {
+        const resumeObjects = await store.list(toObjectKey(`${previous.run_prefix}/output`));
+        const checkpointStep = latestCheckpointStep(resumeObjects, job.name);
+        if (!checkpointStep) {
+          throw new Error('Resume blocked: the interrupted attempt has no complete checkpoint on the RunPod volume.');
+        }
+        const nextSteps = Number(JSON.parse(job.job_config)?.config?.process?.[0]?.train?.steps);
+        if (checkpointStep >= nextSteps) {
+          throw new Error(`Resume target must be greater than the durable checkpoint step ${checkpointStep}.`);
+        }
       }
       const nextSteps = Number(JSON.parse(job.job_config)?.config?.process?.[0]?.train?.steps);
       if (!Number.isFinite(nextSteps) || nextSteps <= job.step) {
@@ -151,7 +169,7 @@ export default async function startRemoteJob(job: Job): Promise<void> {
       where: { id: job.id },
       data: { info: 'Uploading immutable bundle to the RunPod network volume...' },
     });
-    await new ArtifactStore(config).putImmutableFile(objectKey, bundle.bundlePath, bundle.archiveSha256);
+    await store.putImmutableFile(objectKey, bundle.bundlePath, bundle.archiveSha256);
 
     const currentJob = await prisma.job.findUnique({ where: { id: job.id }, select: { stop: true } });
     if (currentJob?.stop) {
