@@ -86,6 +86,12 @@ export class ArtifactStore {
         endpoint: config.s3Endpoint,
         region: config.s3Region,
         forcePathStyle: true,
+        // RunPod's filesystem-backed S3 gateway can expose the new checksum
+        // header while a frequently rewritten state file still serves the
+        // previous body. Disable optional response-checksum validation only
+        // for RunPod; immutable artifacts are still verified by our explicit
+        // SHA-256 checks before they are accepted.
+        responseChecksumValidation: this.isRunPodStorage ? 'WHEN_REQUIRED' : 'WHEN_SUPPORTED',
         credentials: { accessKeyId: config.s3AccessId, secretAccessKey: config.s3Secret },
       });
   }
