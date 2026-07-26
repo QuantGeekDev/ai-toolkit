@@ -10,6 +10,7 @@ LABEL org.opencontainers.image.source="${AITK_GIT_REMOTE}" \
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONIOENCODING=utf-8 \
+    PYTHONPATH=/opt/ai-toolkit \
     PIP_BREAK_SYSTEM_PACKAGES=1 \
     AITK_TOOLKIT_ROOT=/opt/ai-toolkit \
     AITK_RUNPOD_VOLUME_ROOT=/runpod-volume/aitk \
