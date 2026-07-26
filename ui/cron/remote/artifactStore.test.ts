@@ -145,6 +145,16 @@ describe('RunPod volume artifact store', () => {
     ]);
   });
 
+  it('returns an empty listing for a missing RunPod filesystem prefix', async () => {
+    const error: any = new Error('Invalid object path');
+    error.$metadata = { httpStatusCode: 400 };
+    const runPodConfig = { ...config, s3Endpoint: 'https://s3api-us-ca-2.runpod.io' };
+    await expect(new ArtifactStore(runPodConfig, { send: vi.fn().mockRejectedValue(error) } as any).list('aitk/new-run'))
+      .resolves.toEqual([]);
+    await expect(new ArtifactStore(config, { send: vi.fn().mockRejectedValue(error) } as any).list('aitk/new-run'))
+      .rejects.toThrow('Invalid object path');
+  });
+
   it('accepts the portable ready sidecar when custom metadata is absent', async () => {
     const sha256 = 'b'.repeat(64);
     const client = {

@@ -301,9 +301,18 @@ export class ArtifactStore {
     let continuationToken: string | undefined;
     const seenTokens = new Set<string>();
     do {
-      const result = await this.client.send(
-        new ListObjectsV2Command({ Bucket: this.bucket, Prefix: prefix, ContinuationToken: continuationToken }),
-      );
+      let result: any;
+      try {
+        result = await this.client.send(
+          new ListObjectsV2Command({ Bucket: this.bucket, Prefix: prefix, ContinuationToken: continuationToken }),
+        );
+      } catch (error) {
+        // RunPod maps object keys to real filesystem paths and reports a
+        // missing directory as "Invalid object path" (or a generic 403)
+        // instead of returning an empty S3 listing.
+        if (isMissing(error) || (this.isRunPodStorage && isRunPodFilesystemMissing(error))) return objects;
+        throw error;
+      }
       for (const item of result.Contents || []) {
         if (!item.Key) continue;
         objects.push({
