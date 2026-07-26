@@ -22,10 +22,10 @@ The UI exposes only `configured: true/false` and a **Test RunPod connection** ac
 1. Revoke the RunPod key previously exposed in chat and create a replacement. The implementation has not used or stored the exposed value.
 2. Choose a RunPod datacenter offering H100 Serverless capacity and the network-volume S3 API.
 3. Build and push the worker with `remote/runpod/build_worker.ps1`. It refuses a dirty worktree or mutable base-image reference and prints the pushed immutable digest.
-4. Plan and then create the RunPod volume, template, and endpoint with `remote/runpod/provision.py` as documented in `infra/runpod/README.md`. It uses the official REST API because the current official Terraform provider fails Terraform schema validation. The endpoint is strict H100, `workersMin=0`, `workersMax=1`, and has no GPU fallback.
+4. Plan and then create the RunPod volume, template, and endpoint with `remote/runpod/provision.py` as documented in `infra/runpod/README.md`. It uses the official REST API because the current official Terraform provider fails Terraform schema validation. The endpoint is strict H100, `workersMin=0`, supports one to three workers through `--max-concurrent-jobs`, and has no GPU fallback.
 5. The bootstrap references a read-only Hugging Face token through the RunPod secret `aitk_hf_read` and gives the worker only `HF_TOKEN`, `AITK_WORKER_IMAGE_DIGEST`, and `AITK_REQUIRE_H100=1`. Do not give it the RunPod controller key, volume S3 credentials, an AWS profile, or AWS credentials.
 6. Start the local UI with controller variables modeled by `remote/runpod/runpod.env.example`, including the network volume's datacenter ID as the S3 signing region. Non-secret endpoint/volume/digest fields may instead be saved on Settings.
-7. On Settings, run **Save and test RunPod**. Submission is blocked unless the endpoint reports zero minimum workers, one maximum worker, exactly H100, the expected volume, and the immutable worker image (when exposed by the API).
+7. On Settings, choose **Maximum concurrent H100 jobs** from one to three, then run **Save and test RunPod**. Submission is blocked unless the endpoint has at least that many maximum workers, zero minimum workers, exactly H100, the expected volume, and the immutable worker image (when exposed by the API).
 8. Create or edit a training job, choose **RunPod Serverless H100**, set an integer training seed, then start its independent `runpod:h100` queue.
 
 The existing job page consumes mirrored `log.txt`, `loss_log.db`, samples, checkpoints, and LoRAs. Numbered `.safetensors` checkpoints are exposed during training only after AI Toolkit advances beyond their save step; the worker hashes them and the controller verifies that hash before making them visible locally. A graceful Stop writes a control object that the worker translates into its private SQLite database. Force Cancel is deliberately separate. **Continue +500 Steps** creates a new attempt, verifies resume compatibility, restores the prior verified output tree, and can recover a missing local parent bundle from the volume by checksum. Local-to-remote resume is intentionally rejected until local checkpoint inventories can meet the same verification contract.
@@ -41,7 +41,7 @@ The recommended first RunPod backend is a **queue-based Serverless endpoint**:
 - H100 GPU;
 - Flex workers;
 - `workersMin: 0`;
-- `workersMax: 1`;
+- `workersMax: 1-3`, matching the controller's `RUNPOD_MAX_CONCURRENT_JOBS` cost ceiling;
 - `idleTimeout: 5` seconds;
 - asynchronous `/run` requests;
 - a per-job execution timeout, initially 3 hours;
@@ -342,7 +342,7 @@ runpod:serverless:h100
 
 The existing queue should remain authoritative. Submit to RunPod only when a remote job reaches the front of its AI Toolkit queue. This prevents two independent queues from drifting and makes the local dashboard the source of truth.
 
-RunPod's endpoint should have `workersMax: 1` initially, preventing accidental concurrent H100 jobs. Multiple queued local jobs then run sequentially.
+RunPod's endpoint and the local `RUNPOD_MAX_CONCURRENT_JOBS` setting jointly cap concurrency. The remote queue fills up to that limit and starts another queued job when a slot finishes. Keep the default at one until concurrent cost is intentional; this fork enforces an upper bound of three.
 
 ## Cancellation, failures, and resume
 
@@ -377,7 +377,7 @@ RunPod can retry failed Serverless requests. A handler must not start a second t
 
 Required safeguards:
 
-- Serverless endpoint `workersMin: 0` and `workersMax: 1`;
+- Serverless endpoint `workersMin: 0` and `workersMax` no lower than the controller limit, with both capped at three;
 - five-second idle timeout;
 - explicit execution timeout and TTL on every request;
 - maximum expected dollar cost displayed before submission;

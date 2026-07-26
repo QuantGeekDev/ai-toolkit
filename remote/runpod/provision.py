@@ -148,6 +148,7 @@ class ProvisionSpec:
     hf_secret_name: str
     execution_timeout_ms: int
     ttl_ms: int
+    max_concurrent_jobs: int = 1
     source_repository: str | None = None
     source_commit: str | None = None
 
@@ -233,7 +234,7 @@ def _endpoint_body(spec: ProvisionSpec, template_id: str, volume_id: str) -> dic
         "scalerType": "QUEUE_DELAY",
         "scalerValue": 4,
         "templateId": template_id,
-        "workersMax": 1,
+        "workersMax": spec.max_concurrent_jobs,
         "workersMin": 0,
     }
 
@@ -331,7 +332,11 @@ def provision(client: RunPodRestClient, spec: ProvisionSpec, apply: bool) -> dic
         _require_match(_field(endpoint, "scalerType", "scaler_type"), "QUEUE_DELAY", "endpoint scalerType")
         _require_match(_field(endpoint, "scalerValue", "scaler_value"), 4, "endpoint scalerValue")
         _require_match(_field(endpoint, "workersMin", "workers_min"), 0, "endpoint workersMin")
-        _require_match(_field(endpoint, "workersMax", "workers_max"), 1, "endpoint workersMax")
+        _require_match(
+            _field(endpoint, "workersMax", "workers_max"),
+            spec.max_concurrent_jobs,
+            "endpoint workersMax",
+        )
         actions.append("reuse endpoint")
     elif apply:
         if not volume or not template:
@@ -365,6 +370,7 @@ def provision(client: RunPodRestClient, spec: ProvisionSpec, apply: bool) -> dic
             "RUNPOD_S3_REGION": spec.datacenter_id,
             "RUNPOD_S3_BUCKET": volume_id,
             "RUNPOD_WORKER_IMAGE_DIGEST": spec.worker_image,
+            "RUNPOD_MAX_CONCURRENT_JOBS": str(spec.max_concurrent_jobs),
             "RUNPOD_EXECUTION_TIMEOUT_MS": str(spec.execution_timeout_ms),
             "RUNPOD_TTL_MS": str(spec.ttl_ms),
         }
@@ -390,6 +396,12 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--hf-secret-name", default="aitk_hf_read")
     parser.add_argument("--execution-timeout-ms", type=int, default=10_800_000)
     parser.add_argument("--ttl-ms", type=int, default=21_600_000)
+    parser.add_argument(
+        "--max-concurrent-jobs",
+        type=int,
+        default=1,
+        help="Maximum concurrent H100 workers and AI Toolkit remote jobs (1-3)",
+    )
     parser.add_argument("--api-key-env", default="RUNPOD_API_KEY")
     parser.add_argument("--rest-base-url", default=REST_BASE_URL, help=argparse.SUPPRESS)
     parser.add_argument("--output", type=Path, help="Write non-secret result JSON to this path")
@@ -417,6 +429,8 @@ def main(argv: list[str] | None = None) -> int:
         raise ProvisionError("--container-disk-gb must be at least 10")
     if args.ttl_ms <= args.execution_timeout_ms:
         raise ProvisionError("--ttl-ms must exceed --execution-timeout-ms")
+    if not 1 <= args.max_concurrent_jobs <= 3:
+        raise ProvisionError("--max-concurrent-jobs must be between 1 and 3")
     api_key = os.environ.get(args.api_key_env, "").strip()
     if not api_key:
         raise ProvisionError(f"Set {args.api_key_env} in the environment; credentials are never accepted as arguments")
@@ -430,6 +444,7 @@ def main(argv: list[str] | None = None) -> int:
         hf_secret_name=args.hf_secret_name,
         execution_timeout_ms=args.execution_timeout_ms,
         ttl_ms=args.ttl_ms,
+        max_concurrent_jobs=args.max_concurrent_jobs,
         source_repository=args.source_repository,
         source_commit=args.source_commit.lower() if args.source_commit else None,
     )

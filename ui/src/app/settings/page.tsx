@@ -118,7 +118,7 @@ export default function Settings() {
       const response = await apiClient.post('/api/settings/providers/runpod/test');
       setRunPodTestStatus('success');
       setRunPodTestMessage(
-        `Endpoint passed strict H100 checks (${response.data.warnings?.length || 0} warning(s)); workersMin=0 and workersMax=1.`,
+        `Endpoint passed strict H100 checks (${response.data.warnings?.length || 0} warning(s)); workersMin=0 and up to ${settings.RUNPOD_MAX_CONCURRENT_JOBS} concurrent H100 jobs.`,
       );
     } catch (error: any) {
       setRunPodTestStatus('error');
@@ -368,6 +368,7 @@ export default function Settings() {
                     ['RUNPOD_S3_REGION', 'S3 datacenter region', 'EU-RO-1'],
                     ['RUNPOD_S3_BUCKET', 'S3 bucket', 'Usually the network volume ID'],
                     ['RUNPOD_WORKER_IMAGE_DIGEST', 'Worker image digest', 'registry/image@sha256:...'],
+                    ['RUNPOD_MAX_CONCURRENT_JOBS', 'Maximum concurrent H100 jobs', '1-3'],
                     ['RUNPOD_EXECUTION_TIMEOUT_MS', 'Execution timeout (ms)', '10800000'],
                     ['RUNPOD_TTL_MS', 'Queue TTL (ms)', '21600000'],
                     ['RUNPOD_BUNDLE_DIRECTORY', 'Local bundle directory', 'Blank uses output/.bundles'],
@@ -377,14 +378,22 @@ export default function Settings() {
                         {label}
                       </label>
                       <input
-                        type="text"
+                        type={name === 'RUNPOD_MAX_CONCURRENT_JOBS' ? 'number' : 'text'}
                         id={name}
                         name={name}
+                        min={name === 'RUNPOD_MAX_CONCURRENT_JOBS' ? 1 : undefined}
+                        max={name === 'RUNPOD_MAX_CONCURRENT_JOBS' ? 3 : undefined}
+                        step={name === 'RUNPOD_MAX_CONCURRENT_JOBS' ? 1 : undefined}
                         value={String(settings[name as keyof typeof settings] || '')}
                         onChange={handleChange}
                         className="mt-1 w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg focus:ring-2 focus:ring-gray-600 focus:border-transparent"
                         placeholder={placeholder}
                       />
+                      {name === 'RUNPOD_MAX_CONCURRENT_JOBS' && (
+                        <p className="mt-1 text-xs text-amber-500">
+                          Cost safety limit: each active slot can provision one separately billed H100 worker.
+                        </p>
+                      )}
                     </div>
                   ))}
                   <button

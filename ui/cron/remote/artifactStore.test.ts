@@ -16,6 +16,7 @@ const config: RunPodConfig = {
   s3AccessId: 'access',
   s3Secret: 'secret',
   workerImageDigest: `image@sha256:${'a'.repeat(64)}`,
+  maxConcurrentJobs: 3,
   executionTimeoutMs: 1,
   ttlMs: 2,
   bundleDirectory: 'C:/bundles',

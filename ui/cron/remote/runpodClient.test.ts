@@ -13,6 +13,7 @@ const config: RunPodConfig = {
   s3AccessId: 'access',
   s3Secret: 'secret',
   workerImageDigest: `example/image@sha256:${'a'.repeat(64)}`,
+  maxConcurrentJobs: 3,
   executionTimeoutMs: 10_000,
   ttlMs: 20_000,
   bundleDirectory: 'bundles',
@@ -54,7 +55,7 @@ describe('RunPod client', () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
-  it('enforces scale-to-zero, one H100, volume, and immutable image during preflight', async () => {
+  it('enforces scale-to-zero, three-worker capacity, one H100 per worker, volume, and immutable image', async () => {
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce(
@@ -62,7 +63,7 @@ describe('RunPod client', () => {
           {
             id: 'endpoint-1',
             workersMin: 0,
-            workersMax: 1,
+            workersMax: 3,
             gpuCount: 1,
             idleTimeout: 5,
             computeType: 'GPU',
@@ -92,7 +93,7 @@ describe('RunPod client', () => {
           {
             id: 'endpoint-1',
             workersMin: 0,
-            workersMax: 1,
+            workersMax: 3,
             gpuCount: 1,
             idleTimeout: 5,
             computeType: 'GPU',
@@ -115,7 +116,7 @@ describe('RunPod client', () => {
     expect(result).toMatchObject({ ok: true, errors: [], warnings: [] });
   });
 
-  it('blocks active workers, GPU fallbacks, and a wrong datacenter', async () => {
+  it('warns about a full worker pool while blocking GPU fallbacks and a wrong datacenter', async () => {
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce(
@@ -123,7 +124,7 @@ describe('RunPod client', () => {
           {
             id: 'endpoint-1',
             workersMin: 0,
-            workersMax: 1,
+            workersMax: 3,
             gpuCount: 1,
             idleTimeout: 5,
             computeType: 'GPU',
@@ -135,7 +136,7 @@ describe('RunPod client', () => {
           },
         ]),
       )
-      .mockResolvedValueOnce(response({ workers: { idle: 0, running: 1 } })) as any;
+      .mockResolvedValueOnce(response({ workers: { idle: 0, running: 3 } })) as any;
     const result = await new RunPodClient(
       config,
       fetchMock,
@@ -144,7 +145,7 @@ describe('RunPod client', () => {
     ).preflight();
     expect(result.ok).toBe(false);
     expect(result.errors.join(' ')).toContain('GPU fallbacks');
-    expect(result.errors.join(' ')).toContain('active worker');
+    expect(result.warnings.join(' ')).toContain('3 active worker');
     expect(result.errors.join(' ')).toContain('datacenters');
   });
 
@@ -156,7 +157,7 @@ describe('RunPod client', () => {
           {
             id: 'endpoint-1',
             workersMin: 0,
-            workersMax: 1,
+            workersMax: 3,
             gpuCount: 1,
             idleTimeout: 5,
             computeType: 'GPU',
@@ -182,7 +183,7 @@ describe('RunPod client', () => {
     expect(result).toMatchObject({ ok: true, errors: [] });
   });
 
-  it('does not double-count a worker reported as both idle and ready', async () => {
+  it('allows an available slot and does not double-count a worker reported as both idle and ready', async () => {
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce(
@@ -190,7 +191,7 @@ describe('RunPod client', () => {
           {
             id: 'endpoint-1',
             workersMin: 0,
-            workersMax: 1,
+            workersMax: 3,
             gpuCount: 1,
             idleTimeout: 5,
             computeType: 'GPU',
@@ -211,9 +212,8 @@ describe('RunPod client', () => {
       async () => undefined,
       () => 0,
     ).preflight();
-    expect(result.ok).toBe(false);
-    expect(result.errors.join(' ')).toContain('1 active worker');
-    expect(result.errors.join(' ')).not.toContain('2 active workers');
+    expect(result.ok).toBe(true);
+    expect(result.errors).toEqual([]);
   });
 
   it('falls back to endpoint worker records when health omits worker counts', async () => {
@@ -224,14 +224,14 @@ describe('RunPod client', () => {
           {
             id: 'endpoint-1',
             workersMin: 0,
-            workersMax: 1,
+            workersMax: 3,
             gpuCount: 1,
             idleTimeout: 5,
             computeType: 'GPU',
             networkVolumeId: 'volume-1',
             dataCenterIds: ['EU-RO-1'],
             gpuTypeIds: ['NVIDIA H100 80GB HBM3'],
-            workers: [{ id: 'worker-1' }],
+            workers: [{ id: 'worker-1' }, { id: 'worker-2' }, { id: 'worker-3' }],
             template: { image: config.workerImageDigest, env: { AITK_WORKER_IMAGE_DIGEST: config.workerImageDigest } },
           },
         ]),
@@ -243,8 +243,72 @@ describe('RunPod client', () => {
       async () => undefined,
       () => 0,
     ).preflight();
+    expect(result.ok).toBe(true);
+    expect(result.warnings.join(' ')).toContain('3 active worker');
+  });
+
+  it('counts running workers separately from the overlapping idle and ready views', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        response([
+          {
+            id: 'endpoint-1',
+            workersMin: 0,
+            workersMax: 3,
+            gpuCount: 1,
+            idleTimeout: 5,
+            computeType: 'GPU',
+            networkVolumeId: 'volume-1',
+            dataCenterIds: ['EU-RO-1'],
+            gpuTypeIds: ['NVIDIA H100 80GB HBM3'],
+            workers: [],
+            template: { image: config.workerImageDigest, env: { AITK_WORKER_IMAGE_DIGEST: config.workerImageDigest } },
+          },
+        ]),
+      )
+      .mockResolvedValueOnce(
+        response({ workers: { idle: 1, initializing: 0, ready: 1, running: 2, unhealthy: 0 } }),
+      ) as any;
+    const result = await new RunPodClient(
+      config,
+      fetchMock,
+      async () => undefined,
+      () => 0,
+    ).preflight();
+    expect(result.ok).toBe(true);
+    expect(result.warnings.join(' ')).toContain('3 active worker');
+  });
+
+  it('rejects an endpoint whose max workers is below the configured local concurrency', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        response([
+          {
+            id: 'endpoint-1',
+            workersMin: 0,
+            workersMax: 2,
+            gpuCount: 1,
+            idleTimeout: 5,
+            computeType: 'GPU',
+            networkVolumeId: 'volume-1',
+            dataCenterIds: ['EU-RO-1'],
+            gpuTypeIds: ['NVIDIA H100 80GB HBM3'],
+            workers: [],
+            template: { image: config.workerImageDigest, env: { AITK_WORKER_IMAGE_DIGEST: config.workerImageDigest } },
+          },
+        ]),
+      )
+      .mockResolvedValueOnce(response({ workers: { idle: 0, running: 0 } })) as any;
+    const result = await new RunPodClient(
+      config,
+      fetchMock,
+      async () => undefined,
+      () => 0,
+    ).preflight();
     expect(result.ok).toBe(false);
-    expect(result.errors.join(' ')).toContain('1 active worker');
+    expect(result.errors.join(' ')).toContain('at least RUNPOD_MAX_CONCURRENT_JOBS (3)');
   });
 
   it('maps authentication failures without exposing response credentials', async () => {

@@ -2,6 +2,7 @@ import prisma from '../prisma';
 
 import { Job, Queue } from '@prisma/client';
 import startJob from './startJob';
+import { getRunPodConfig, RUNPOD_QUEUE_KEY, safeRunPodConcurrencyLimit } from '../remote/settings';
 
 export default async function processQueue() {
   const queues: Queue[] = await prisma.queue.findMany({
@@ -34,6 +35,41 @@ export default async function processQueue() {
       }
     }
     if (queue.is_running) {
+      if (queue.gpu_ids === RUNPOD_QUEUE_KEY) {
+        const config = await getRunPodConfig();
+        const concurrencyLimit = safeRunPodConcurrencyLimit(config.maxConcurrentJobs);
+        const activeJobCount = await prisma.job.count({
+          where: {
+            execution_target: 'runpod_serverless',
+            status: { in: ['running', 'stopping'] },
+          },
+        });
+        const availableSlots = Math.max(0, concurrencyLimit - activeJobCount);
+        if (availableSlots === 0) continue;
+
+        const nextJobs: Job[] = await prisma.job.findMany({
+          where: {
+            status: 'queued',
+            execution_target: 'runpod_serverless',
+            gpu_ids: RUNPOD_QUEUE_KEY,
+          },
+          orderBy: { queue_position: 'asc' },
+          take: availableSlots,
+        });
+        for (const [index, nextJob] of nextJobs.entries()) {
+          console.log(`Starting remote job ${nextJob.id} (${activeJobCount + index + 1}/${concurrencyLimit})`);
+          await startJob(nextJob.id);
+        }
+        if (activeJobCount === 0 && nextJobs.length === 0) {
+          console.log('No more jobs in the RunPod queue, stopping queue');
+          await prisma.queue.update({
+            where: { id: queue.id },
+            data: { is_running: false },
+          });
+        }
+        continue;
+      }
+
       // first see if one is already running, status of running or stopping
       const runningJob: Job | null = await prisma.job.findFirst({
         where: {

@@ -26,6 +26,7 @@ def spec() -> ProvisionSpec:
         hf_secret_name="aitk_hf_read",
         execution_timeout_ms=10_800_000,
         ttl_ms=21_600_000,
+        max_concurrent_jobs=3,
     )
 
 
@@ -65,11 +66,12 @@ class RunPodProvisionTests(unittest.TestCase):
         self.assertEqual(template["containerDiskInGb"], 30)
         endpoint = client.created[2][1]
         self.assertEqual(endpoint["workersMin"], 0)
-        self.assertEqual(endpoint["workersMax"], 1)
+        self.assertEqual(endpoint["workersMax"], 3)
         self.assertEqual(endpoint["idleTimeout"], 5)
         self.assertEqual(endpoint["gpuTypeIds"], ["NVIDIA H100 80GB HBM3"])
         self.assertEqual(endpoint["networkVolumeId"], "networkvolumes-id")
         self.assertEqual(result["aiToolkitSettings"]["RUNPOD_ENDPOINT_ID"], "endpoints-id")
+        self.assertEqual(result["aiToolkitSettings"]["RUNPOD_MAX_CONCURRENT_JOBS"], "3")
         self.assertNotIn("RUNPOD_API_KEY", result["aiToolkitSettings"])
 
     def test_second_apply_reuses_matching_resources(self):
@@ -113,7 +115,7 @@ class RunPodProvisionTests(unittest.TestCase):
                     "scalerType": "QUEUE_DELAY",
                     "scalerValue": 4,
                     "workersMin": 0,
-                    "workersMax": 1,
+                    "workersMax": 3,
                 }
             ],
         }

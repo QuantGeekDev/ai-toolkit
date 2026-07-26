@@ -10,6 +10,7 @@ export const RUNPOD_SETTING_KEYS = [
   'RUNPOD_S3_REGION',
   'RUNPOD_S3_BUCKET',
   'RUNPOD_WORKER_IMAGE_DIGEST',
+  'RUNPOD_MAX_CONCURRENT_JOBS',
   'RUNPOD_EXECUTION_TIMEOUT_MS',
   'RUNPOD_TTL_MS',
   'RUNPOD_BUNDLE_DIRECTORY',
@@ -35,6 +36,7 @@ export type RunPodConfig = {
   s3AccessId: string;
   s3Secret: string;
   workerImageDigest: string;
+  maxConcurrentJobs: number;
   executionTimeoutMs: number;
   ttlMs: number;
   bundleDirectory: string;
@@ -72,6 +74,7 @@ export const getRunPodConfig = async (): Promise<RunPodConfig> => {
     s3AccessId: process.env.RUNPOD_S3_ACCESS_ID?.trim() || '',
     s3Secret: process.env.RUNPOD_S3_SECRET?.trim() || '',
     workerImageDigest: value('RUNPOD_WORKER_IMAGE_DIGEST'),
+    maxConcurrentJobs: Number(value('RUNPOD_MAX_CONCURRENT_JOBS') || '1'),
     executionTimeoutMs: readPositiveInteger(value('RUNPOD_EXECUTION_TIMEOUT_MS'), 3 * 60 * 60 * 1000),
     ttlMs: readPositiveInteger(value('RUNPOD_TTL_MS'), 6 * 60 * 60 * 1000),
     bundleDirectory: value('RUNPOD_BUNDLE_DIRECTORY') || path.join(trainingFolder, '.bundles'),
@@ -107,6 +110,9 @@ export const validateRunPodConfig = (config: RunPodConfig): string[] => {
   if (!/@sha256:[0-9a-f]{64}$/i.test(config.workerImageDigest)) {
     errors.push('RUNPOD_WORKER_IMAGE_DIGEST must be an immutable image@sha256 digest.');
   }
+  if (!Number.isSafeInteger(config.maxConcurrentJobs) || config.maxConcurrentJobs < 1 || config.maxConcurrentJobs > 3) {
+    errors.push('RUNPOD_MAX_CONCURRENT_JOBS must be an integer from 1 to 3.');
+  }
   if (config.executionTimeoutMs > 7 * 24 * 60 * 60 * 1000) errors.push('RunPod execution timeout exceeds 7 days.');
   if (config.ttlMs > 7 * 24 * 60 * 60 * 1000) errors.push('RunPod TTL exceeds 7 days.');
   if (config.ttlMs <= config.executionTimeoutMs) errors.push('RunPod TTL must exceed the execution timeout.');
@@ -114,6 +120,9 @@ export const validateRunPodConfig = (config: RunPodConfig): string[] => {
     errors.push('RUNPOD_BUNDLE_DIRECTORY must resolve to an absolute local path.');
   return errors;
 };
+
+export const safeRunPodConcurrencyLimit = (value: number): number =>
+  Number.isSafeInteger(value) && value >= 1 && value <= 3 ? value : 1;
 
 export const runPodSecretStatus = () => ({
   apiKeyConfigured: Boolean(process.env.RUNPOD_API_KEY?.trim()),

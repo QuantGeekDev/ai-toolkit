@@ -192,19 +192,27 @@ export class RunPodClient {
     const gpuText = JSON.stringify(gpuIds).toUpperCase();
     const workers = Array.isArray(endpoint.workers) ? endpoint.workers : [];
     const healthWorkers =
-      health.workers && typeof health.workers === 'object'
-        ? (health.workers as Record<string, unknown>)
-        : undefined;
+      health.workers && typeof health.workers === 'object' ? (health.workers as Record<string, unknown>) : undefined;
     // `throttled` is a scheduler/cooldown state that RunPod can retain after
     // the underlying worker Pod has been terminated. It is not a live worker.
     const healthWorkerStates = ['idle', 'initializing', 'ready', 'running', 'unhealthy'] as const;
     const healthWorkerCounts = healthWorkers
       ? healthWorkerStates.map(state => Number(healthWorkers[state])).filter(Number.isFinite)
       : [];
+    const healthWorkerCount = (state: (typeof healthWorkerStates)[number]): number => {
+      const count = Number(healthWorkers?.[state]);
+      return Number.isFinite(count) && count > 0 ? count : 0;
+    };
     const activeWorkerCount =
-      // RunPod can report the same ready worker in both `idle` and `ready`;
-      // these fields are overlapping views, not mutually exclusive buckets.
-      healthWorkerCounts.length > 0 ? Math.max(0, ...healthWorkerCounts) : workers.length;
+      // RunPod can report the same available worker in both `idle` and
+      // `ready`. Running/initializing/unhealthy are separate workers, so add
+      // those states to the larger of the overlapping availability views.
+      healthWorkerCounts.length > 0
+        ? Math.max(healthWorkerCount('idle'), healthWorkerCount('ready')) +
+          healthWorkerCount('initializing') +
+          healthWorkerCount('running') +
+          healthWorkerCount('unhealthy')
+        : workers.length;
     const endpointRegionsRaw =
       endpoint.dataCenterIds ?? endpoint.data_center_ids ?? endpoint.dataCenterId ?? endpoint.data_center_id ?? [];
     const endpointRegions = (
@@ -215,7 +223,10 @@ export class RunPodClient {
     if (!Number.isFinite(minimumWorkers)) errors.push('RunPod endpoint response did not expose workersMin.');
     else if (minimumWorkers !== 0) errors.push(`RunPod workersMin must be 0, got ${minimumWorkers}.`);
     if (!Number.isFinite(maximumWorkers)) errors.push('RunPod endpoint response did not expose workersMax.');
-    else if (maximumWorkers !== 1) errors.push(`RunPod workersMax must be 1, got ${maximumWorkers}.`);
+    else if (maximumWorkers < this.config.maxConcurrentJobs)
+      errors.push(
+        `RunPod workersMax must be at least RUNPOD_MAX_CONCURRENT_JOBS (${this.config.maxConcurrentJobs}), got ${maximumWorkers}.`,
+      );
     if (volumeIds.length !== 1 || volumeIds[0] !== this.config.networkVolumeId)
       errors.push('RunPod endpoint network volume does not match RUNPOD_NETWORK_VOLUME_ID.');
     if (computeType && computeType !== 'GPU')
@@ -230,9 +241,9 @@ export class RunPodClient {
     // RunPod's REST endpoint can retain terminated worker records after the Pod
     // has disappeared. The v2 health response is the authoritative live count;
     // only fall back to the REST array when health does not expose worker counts.
-    if (activeWorkerCount > 0)
-      errors.push(
-        `RunPod endpoint already has ${activeWorkerCount} active worker(s); wait for scale-to-zero before submitting.`,
+    if (activeWorkerCount >= this.config.maxConcurrentJobs)
+      warnings.push(
+        `RunPod reports ${activeWorkerCount} active worker(s), so newly submitted jobs may wait for a slot.`,
       );
     if (endpointRegions.length && !endpointRegions.includes(this.config.s3Region.toUpperCase())) {
       errors.push('RunPod endpoint datacenters do not include the network volume S3 region.');

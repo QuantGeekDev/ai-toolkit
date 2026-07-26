@@ -7,7 +7,8 @@ Run `powershell -ExecutionPolicy Bypass -File testing/run_remote_contract_tests.
 Use a disposable 10-20 step fixture before the analog-horror job.
 
 - [ ] The exposed chat credential was revoked; a replacement exists only in the controller environment.
-- [ ] Endpoint preflight reports `workersMin=0`, `workersMax=1`, one H100 type, no fallback, matching network volume, and matching worker digest.
+- [ ] Endpoint preflight reports `workersMin=0`, `workersMax` at least `RUNPOD_MAX_CONCURRENT_JOBS` (maximum three), one H100 type, no fallback, matching network volume, and matching worker digest.
+- [ ] With the concurrency limit set to three, three disposable jobs reach distinct execution IDs/workers while a fourth stays queued until a slot completes.
 - [ ] A bundle exported twice from the same clean commit has identical content/archive digests.
 - [ ] The worker reports an actual GPU name containing `H100` and refuses a mismatched expected image digest.
 - [ ] Cold run downloads the exact Hugging Face revision; second run uses the completed model-cache marker.

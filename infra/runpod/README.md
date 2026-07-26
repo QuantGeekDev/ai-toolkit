@@ -56,7 +56,8 @@ python remote/runpod/provision.py `
   --datacenter-id EU-RO-1 `
   --worker-image docker.io/ostris/aitoolkit@sha256:f14841b070159cd2bd43af466b5cc9594b11560d5703d0993cc33ba7100ef270 `
   --source-repository https://github.com/QuantGeekDev/ai-toolkit.git `
-  --source-commit 287ab41f4024ab367b15b037878e0fc917391b7e
+  --source-commit 287ab41f4024ab367b15b037878e0fc917391b7e `
+  --max-concurrent-jobs 3
 ```
 
 Add `--apply --output .runpod-provision.json` after reviewing the plan. This
@@ -79,10 +80,10 @@ RunPod S3 credentials are separate from the RunPod API key and are generated
 from **Settings > S3 API Keys** in the RunPod console. They are intentionally
 not handled by the bootstrap utility.
 
-The created endpoint has `workersMin=0`, `workersMax=1`, an idle timeout of
-five seconds, one strict H100 GPU type, and the network volume attached. This
-avoids idle GPU billing; the network volume itself continues to incur storage
-charges.
+The created endpoint has `workersMin=0`, `workersMax` equal to
+`--max-concurrent-jobs` (one to three), an idle timeout of five seconds, one
+strict H100 GPU per worker, and the network volume attached. This avoids idle
+GPU billing; the network volume itself continues to incur storage charges.
 
 If registry authorization is not ready yet, `build_worker.ps1 -BuildOnly`
 builds and tags the exact Linux/AMD64 worker locally without attempting a
