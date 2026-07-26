@@ -727,7 +727,6 @@ class WorkerRun:
         _atomic_json(artifact_index_path, artifact_index)
         index_hash, _ = _hash_file(artifact_index_path)
         status = "stopped" if stopped else "completed"
-        safe_message = _redact_message(exc)
         result = {
             "schemaVersion": 1,
             "executionId": self.execution_id,

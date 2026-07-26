@@ -25,6 +25,31 @@ const hashFile = async (file: string): Promise<{ sha256: string; bytes: number }
   return { sha256: digest.digest('hex'), bytes };
 };
 
+const isMissing = (error: any): boolean =>
+  error?.name === 'NotFound' || error?.name === 'NoSuchKey' || error?.$metadata?.httpStatusCode === 404;
+
+const isPreconditionFailure = (error: any): boolean =>
+  error?.name === 'PreconditionFailed' || error?.$metadata?.httpStatusCode === 412;
+
+export const resolveContainedArtifact = async (root: string, relative: string): Promise<string> => {
+  const normalized = relative.replace(/\\/g, '/');
+  if (!normalized || normalized.split('/').some(part => !part || part === '.' || part === '..')) {
+    throw new Error(`Unsafe local artifact path: ${relative}`);
+  }
+  const realRoot = await fs.realpath(root);
+  const candidate = path.resolve(realRoot, ...normalized.split('/'));
+  const candidateInfo = await fs.lstat(candidate);
+  if (candidateInfo.isSymbolicLink() || !candidateInfo.isFile()) {
+    throw new Error(`Archive artifact must be a regular file: ${relative}`);
+  }
+  const realCandidate = await fs.realpath(candidate);
+  const relation = path.relative(realRoot, realCandidate);
+  if (!relation || relation.startsWith(`..${path.sep}`) || relation === '..' || path.isAbsolute(relation)) {
+    throw new Error(`Archive artifact escapes the output directory: ${relative}`);
+  }
+  return realCandidate;
+};
+
 export class AwsArchiveStore {
   private readonly client: S3Client;
 
@@ -45,7 +70,7 @@ export class AwsArchiveStore {
       if (existing.Metadata?.sha256 === identity.sha256 && Number(existing.ContentLength) === identity.bytes) return;
       throw new Error(`Immutable AWS archive collision at ${key}`);
     } catch (error: any) {
-      if (!['NotFound', 'NoSuchKey'].includes(error?.name) && error?.$metadata?.httpStatusCode !== 404) throw error;
+      if (!isMissing(error)) throw error;
     }
     await new Upload({
       client: this.client,
@@ -71,17 +96,37 @@ export class AwsArchiveStore {
     key = safeKey(key);
     const body = Buffer.from(`${JSON.stringify(value, null, 2)}\n`, 'utf8');
     const sha256 = createHash('sha256').update(body).digest('hex');
-    await this.client.send(
-      new PutObjectCommand({
-        Bucket: this.config.bucket,
-        Key: key,
-        Body: body,
-        ContentLength: body.length,
-        ContentType: 'application/json',
-        Metadata: { sha256 },
-        ServerSideEncryption: 'AES256',
-      }),
-    );
+    const verify = async (): Promise<boolean> => {
+      try {
+        const existing = await this.client.send(
+          new HeadObjectCommand({ Bucket: this.config.bucket, Key: key }),
+        );
+        if (existing.Metadata?.sha256 === sha256 && Number(existing.ContentLength) === body.length) return true;
+        throw new Error(`Immutable AWS archive collision at ${key}`);
+      } catch (error) {
+        if (isMissing(error)) return false;
+        throw error;
+      }
+    };
+    if (await verify()) return;
+    try {
+      await this.client.send(
+        new PutObjectCommand({
+          Bucket: this.config.bucket,
+          Key: key,
+          Body: body,
+          ContentLength: body.length,
+          ContentType: 'application/json',
+          Metadata: { sha256 },
+          ServerSideEncryption: 'AES256',
+          IfNoneMatch: '*',
+        }),
+      );
+    } catch (error) {
+      if (!isPreconditionFailure(error) || !(await verify())) throw error;
+      return;
+    }
+    if (!(await verify())) throw new Error(`AWS archive verification failed for ${key}`);
   }
 }
 
@@ -106,12 +151,10 @@ export const archiveRemoteExecution = async (
   const record = JSON.parse(await fs.readFile(recordPath, 'utf8'));
   for (const artifact of record.artifacts || []) {
     const relative = String(artifact.path || '').replace(/\\/g, '/');
-    if (!relative || relative.split('/').some((part: string) => !part || part === '.' || part === '..')) {
-      throw new Error(`Unsafe local artifact path: ${relative}`);
-    }
+    const artifactPath = await resolveContainedArtifact(outputDirectory, relative);
     await store.putFile(
       `${prefix}/artifacts/${relative}`,
-      path.join(outputDirectory, ...relative.split('/')),
+      artifactPath,
       artifact.sha256,
     );
   }
@@ -125,7 +168,7 @@ export const archiveRemoteExecution = async (
     workerImageDigest: execution.worker_image_digest,
     result: record.result,
     artifacts: record.artifacts,
-    archivedAt: new Date().toISOString(),
+    archivedAt: (execution.finished_at || execution.created_at).toISOString(),
   });
   return prefix;
 };

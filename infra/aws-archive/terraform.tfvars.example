@@ -1,0 +1,9 @@
+aws_profile   = "echoflicks"
+aws_region    = "eu-west-1"
+archive_prefix = "ai-toolkit"
+
+# Optional. Null creates ai-toolkit-training-<account-id>-<region>.
+# bucket_name = "my-private-ai-toolkit-training-archive"
+
+# Deliberately false: Terraform cannot destroy an archive containing data.
+force_destroy = false

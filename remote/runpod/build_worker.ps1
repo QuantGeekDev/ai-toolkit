@@ -7,6 +7,11 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $repositoryRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
+if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
+  throw 'Docker is not installed or is not available on PATH.'
+}
+docker info *> $null
+if ($LASTEXITCODE -ne 0) { throw 'Docker is installed, but its daemon is not running.' }
 if ($BaseImageDigest -notmatch '@sha256:[0-9a-fA-F]{64}$') {
   throw 'BaseImageDigest must be an immutable image@sha256 digest.'
 }
@@ -30,6 +35,7 @@ try {
 }
 
 docker build --pull=false `
+  --platform linux/amd64 `
   --file (Join-Path $repositoryRoot 'remote\runpod\Dockerfile') `
   --build-arg "BASE_IMAGE=$BaseImageDigest" `
   --build-arg "AITK_GIT_COMMIT=$commit" `

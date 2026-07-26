@@ -1,3 +1,4 @@
+import hashlib
 import json
 import os
 import sqlite3
@@ -32,6 +33,114 @@ def valid_request():
 
 
 class RunPodWorkerTests(unittest.TestCase):
+    def _run_terminal_worker_fixture(self, *, stopped: bool = False):
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        root = Path(temporary.name)
+        request = valid_request()
+        archive = root / request["bundleKey"]
+        archive.parent.mkdir(parents=True)
+        archive.write_bytes(b"deterministic training bundle fixture")
+        request["bundleArchiveSha256"] = hashlib.sha256(archive.read_bytes()).hexdigest()
+        source_commit = "a" * 40
+        events = []
+        worker = WorkerRun(request, root, root, events.append)
+
+        def extract_fixture(_archive, destination):
+            destination.mkdir(parents=True)
+            manifest = {
+                "schemaVersion": 1,
+                "contentDigest": request["bundleContentDigest"],
+                "source": {"gitCommit": source_commit},
+                "model": {"repository": "example/model", "revision": "b" * 40},
+                "training": {"trainingSeed": 42},
+            }
+            (destination / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+            config = {
+                "config": {
+                    "name": "remote-smoke",
+                    "process": [
+                        {
+                            "type": "diffusion_trainer",
+                            "training_folder": "${AITK_OUTPUT_ROOT}",
+                            "sqlite_db_path": "${AITK_CONTROL_DB}",
+                            "datasets": [{"folder_path": "${AITK_DATASET_DIR}"}],
+                            "model": {"name_or_path": "${AITK_MODEL_DIR}", "revision": "b" * 40},
+                            "train": {"steps": 1},
+                        }
+                    ],
+                }
+            }
+            (destination / "train.template.yaml").write_text(json.dumps(config), encoding="utf-8")
+            (destination / "dataset").mkdir()
+            (destination / "validation").mkdir()
+
+        def materialize_fixture(volume_root, repository, revision, _progress):
+            model_dir = volume_root / "models" / "fixture"
+            model_dir.mkdir(parents=True)
+            (model_dir / ".aitk-model-ready.json").write_text(
+                json.dumps({"repository": repository, "revision": revision, "files": []}),
+                encoding="utf-8",
+            )
+            return model_dir
+
+        class FinishedProcess:
+            def __init__(self):
+                self.stdout = ["training fixture complete\n"]
+
+            def poll(self):
+                return 0
+
+            def wait(self):
+                return 0
+
+        def start_fixture_process(*_args, **kwargs):
+            output_dir = Path(kwargs["env"]["AITK_JOB_OUTPUT_DIR"])
+            (output_dir / "remote-smoke.safetensors").write_bytes(b"verified LoRA")
+            connection = sqlite3.connect(worker.run_dir / "work" / "control.db")
+            try:
+                connection.execute(
+                    "UPDATE Job SET step = 1, status = ?, stop = ? WHERE id = ?",
+                    ("stopped" if stopped else "completed", 1 if stopped else 0, worker.execution_id),
+                )
+                connection.commit()
+            finally:
+                connection.close()
+            return FinishedProcess()
+
+        environment = {
+            "AITK_WORKER_IMAGE_DIGEST": request["expectedWorkerImageDigest"],
+            "AITK_SOURCE_COMMIT": source_commit,
+            "RUNPOD_GPU_NAME": "NVIDIA H100 80GB HBM3",
+        }
+        with (
+            patch.dict(os.environ, environment, clear=False),
+            patch("remote.runpod.worker.safe_extract_training_bundle", side_effect=extract_fixture),
+            patch("remote.runpod.worker._materialize_model", side_effect=materialize_fixture),
+            patch("remote.runpod.worker.subprocess.Popen", side_effect=start_fixture_process),
+        ):
+            result = worker.run()
+        return worker, result, events
+
+    def test_successful_run_writes_verified_result_before_complete_marker(self):
+        worker, result, events = self._run_terminal_worker_fixture()
+        self.assertEqual(result["status"], "completed")
+        self.assertEqual(result["finalStep"], 1)
+        self.assertTrue((worker.run_dir / "result.json").is_file())
+        self.assertTrue((worker.run_dir / "artifacts.json").is_file())
+        self.assertTrue((worker.run_dir / "COMPLETE").is_file())
+        self.assertFalse((worker.run_dir / "STOPPED").exists())
+        self.assertEqual(events[-1]["phase"], "completed")
+        marker_hash = (worker.run_dir / "COMPLETE").read_text(encoding="ascii").strip()
+        self.assertEqual(marker_hash, result["artifactIndexSha256"])
+
+    def test_gracefully_stopped_run_writes_stopped_marker(self):
+        worker, result, events = self._run_terminal_worker_fixture(stopped=True)
+        self.assertEqual(result["status"], "stopped")
+        self.assertTrue((worker.run_dir / "STOPPED").is_file())
+        self.assertFalse((worker.run_dir / "COMPLETE").exists())
+        self.assertEqual(events[-1]["phase"], "stopped")
+
     def test_request_is_fail_closed(self):
         request = valid_request()
         request["unexpectedSecret"] = "no"

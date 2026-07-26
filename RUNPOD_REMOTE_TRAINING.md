@@ -1,7 +1,7 @@
 # Reproducible remote training on RunPod
 
 Status: implemented behind `AI_TOOLKIT_RUNPOD_ENABLED=1`; real-H100 acceptance still requires operator credentials
-Last documentation review: 2026-07-25
+Last documentation review: 2026-07-26
 
 ## Security first
 
@@ -20,17 +20,17 @@ The UI exposes only `configured: true/false` and a **Test RunPod connection** ac
 ## Implemented operator quick start
 
 1. Revoke the RunPod key previously exposed in chat and create a replacement. The implementation has not used or stored the exposed value.
-2. Create a RunPod network volume in a region offering H100 Serverless capacity and its S3-compatible API.
+2. Choose a RunPod datacenter offering H100 Serverless capacity and the network-volume S3 API.
 3. Build and push the worker with `remote/runpod/build_worker.ps1`. It refuses a dirty worktree or mutable base-image reference and prints the pushed immutable digest.
-4. Create a queue-based Serverless endpoint from that worker digest with one H100 GPU type, `workersMin=0`, `workersMax=1`, concurrency one, the network volume attached, and no GPU fallback.
-5. Give the worker template only a read-only `HF_TOKEN`, `AITK_WORKER_IMAGE_DIGEST`, and `AITK_REQUIRE_H100=1`. Do not give it the RunPod controller key, volume S3 credentials, an AWS profile, or AWS credentials.
+4. Plan and then create the RunPod volume, template, and endpoint with `remote/runpod/provision.py` as documented in `infra/runpod/README.md`. It uses the official REST API because the current official Terraform provider fails Terraform schema validation. The endpoint is strict H100, `workersMin=0`, `workersMax=1`, and has no GPU fallback.
+5. The bootstrap references a read-only Hugging Face token through the RunPod secret `aitk_hf_read` and gives the worker only `HF_TOKEN`, `AITK_WORKER_IMAGE_DIGEST`, and `AITK_REQUIRE_H100=1`. Do not give it the RunPod controller key, volume S3 credentials, an AWS profile, or AWS credentials.
 6. Start the local UI with controller variables modeled by `remote/runpod/runpod.env.example`, including the network volume's datacenter ID as the S3 signing region. Non-secret endpoint/volume/digest fields may instead be saved on Settings.
 7. On Settings, run **Save and test RunPod**. Submission is blocked unless the endpoint reports zero minimum workers, one maximum worker, exactly H100, the expected volume, and the immutable worker image (when exposed by the API).
 8. Create or edit a training job, choose **RunPod Serverless H100**, set an integer training seed, then start its independent `runpod:h100` queue.
 
 The existing job page consumes mirrored `log.txt`, `loss_log.db`, samples, checkpoints, and LoRAs. Numbered `.safetensors` checkpoints are exposed during training only after AI Toolkit advances beyond their save step; the worker hashes them and the controller verifies that hash before making them visible locally. A graceful Stop writes a control object that the worker translates into its private SQLite database. Force Cancel is deliberately separate. **Continue +500 Steps** creates a new attempt, verifies resume compatibility, restores the prior verified output tree, and can recover a missing local parent bundle from the volume by checksum. Local-to-remote resume is intentionally rejected until local checkpoint inventories can meet the same verification contract.
 
-The local controller may optionally archive a completed bundle and verified artifacts to AWS S3 with `AI_TOOLKIT_AWS_ARCHIVE_ENABLED=1` and standard AWS credential resolution such as `AWS_PROFILE=echoflicks`. Those credentials never enter a bundle or RunPod request.
+The local controller may optionally archive a completed bundle and verified artifacts to AWS S3 with `AI_TOOLKIT_AWS_ARCHIVE_ENABLED=1` and standard AWS credential resolution such as `AWS_PROFILE=echoflicks`. Provision the private archive bucket from `infra/aws-archive`; those credentials never enter a bundle or RunPod request.
 
 ## Recommendation
 

@@ -84,6 +84,37 @@ describe('RunPod client', () => {
     await expect(client.preflight()).resolves.toMatchObject({ ok: true, errors: [] });
   });
 
+  it('accepts the API v2 singular GPU, root image, volume array, and environment array shape', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        response([
+          {
+            id: 'endpoint-1',
+            workersMin: 0,
+            workersMax: 1,
+            gpuCount: 1,
+            idleTimeout: 5,
+            computeType: 'GPU',
+            networkVolumeIds: ['volume-1'],
+            dataCenterId: 'EU-RO-1',
+            gpuTypeId: 'NVIDIA H100 80GB HBM3',
+            workers: [],
+            image: config.workerImageDigest,
+            env: [{ key: 'AITK_WORKER_IMAGE_DIGEST', value: config.workerImageDigest }],
+          },
+        ]),
+      )
+      .mockResolvedValueOnce(response({ workers: { idle: 0, running: 0 } })) as any;
+    const result = await new RunPodClient(
+      config,
+      fetchMock,
+      async () => undefined,
+      () => 0,
+    ).preflight();
+    expect(result).toMatchObject({ ok: true, errors: [], warnings: [] });
+  });
+
   it('blocks active workers, GPU fallbacks, and a wrong datacenter', async () => {
     const fetchMock = vi
       .fn()

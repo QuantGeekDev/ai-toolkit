@@ -165,14 +165,34 @@ export class RunPodClient {
     const warnings: string[] = [];
     const minimumWorkers = Number(endpoint.workersMin ?? endpoint.workers_min ?? endpoint.scaler?.workersMin);
     const maximumWorkers = Number(endpoint.workersMax ?? endpoint.workers_max ?? endpoint.scaler?.workersMax);
-    const volume = String(endpoint.networkVolumeId ?? endpoint.network_volume_id ?? endpoint.networkVolume?.id ?? '');
-    const gpuCount = Number(endpoint.gpuCount ?? endpoint.gpu_count);
+    const rawVolumeIds =
+      endpoint.networkVolumeIds ??
+      endpoint.network_volume_ids ??
+      endpoint.networkVolumeId ??
+      endpoint.network_volume_id ??
+      endpoint.networkVolume?.id ??
+      [];
+    const volumeIds = (Array.isArray(rawVolumeIds) ? rawVolumeIds : [rawVolumeIds])
+      .map(value => String(value || '').trim())
+      .filter(Boolean);
+    const gpuCount = Number(endpoint.gpuCount ?? endpoint.gpu_count ?? endpoint.gpu?.count);
     const idleTimeout = Number(endpoint.idleTimeout ?? endpoint.idle_timeout);
     const computeType = String(endpoint.computeType ?? endpoint.compute_type ?? '').toUpperCase();
-    const gpuIds = endpoint.gpuIds ?? endpoint.gpu_ids ?? endpoint.gpus ?? endpoint.gpuTypeIds ?? [];
+    const rawGpuIds =
+      endpoint.gpuTypeIds ??
+      endpoint.gpu_type_ids ??
+      endpoint.gpuTypeId ??
+      endpoint.gpu_type_id ??
+      endpoint.gpuIds ??
+      endpoint.gpu_ids ??
+      endpoint.gpus ??
+      endpoint.gpu ??
+      [];
+    const gpuIds = Array.isArray(rawGpuIds) ? rawGpuIds : [rawGpuIds];
     const gpuText = JSON.stringify(gpuIds).toUpperCase();
     const workers = Array.isArray(endpoint.workers) ? endpoint.workers : [];
-    const endpointRegionsRaw = endpoint.dataCenterIds ?? endpoint.data_center_ids ?? [];
+    const endpointRegionsRaw =
+      endpoint.dataCenterIds ?? endpoint.data_center_ids ?? endpoint.dataCenterId ?? endpoint.data_center_id ?? [];
     const endpointRegions = (
       Array.isArray(endpointRegionsRaw) ? endpointRegionsRaw : String(endpointRegionsRaw).split(',')
     )
@@ -182,7 +202,7 @@ export class RunPodClient {
     else if (minimumWorkers !== 0) errors.push(`RunPod workersMin must be 0, got ${minimumWorkers}.`);
     if (!Number.isFinite(maximumWorkers)) errors.push('RunPod endpoint response did not expose workersMax.');
     else if (maximumWorkers !== 1) errors.push(`RunPod workersMax must be 1, got ${maximumWorkers}.`);
-    if (volume !== this.config.networkVolumeId)
+    if (volumeIds.length !== 1 || volumeIds[0] !== this.config.networkVolumeId)
       errors.push('RunPod endpoint network volume does not match RUNPOD_NETWORK_VOLUME_ID.');
     if (computeType && computeType !== 'GPU')
       errors.push(`RunPod endpoint compute type must be GPU, got ${computeType}.`);
@@ -191,7 +211,7 @@ export class RunPodClient {
     if (!Number.isFinite(idleTimeout)) errors.push('RunPod endpoint response did not expose idleTimeout.');
     else if (idleTimeout !== 5) errors.push(`RunPod idleTimeout must be 5 seconds, got ${idleTimeout}.`);
     if (!gpuText.includes('H100')) errors.push('RunPod endpoint must request an H100 GPU.');
-    if (Array.isArray(gpuIds) && gpuIds.length > 1)
+    if (gpuIds.length > 1)
       errors.push('RunPod endpoint has GPU fallbacks; strict H100 mode permits one GPU type only.');
     if (workers.length > 0)
       errors.push(
@@ -204,16 +224,26 @@ export class RunPodClient {
       endpoint.template?.image ??
         endpoint.template?.imageName ??
         endpoint.template?.image_name ??
+        endpoint.image ??
         endpoint.imageName ??
+        endpoint.image_name ??
         '',
     );
     if (image && image !== this.config.workerImageDigest)
       errors.push('RunPod endpoint image does not match RUNPOD_WORKER_IMAGE_DIGEST.');
     if (!image)
       warnings.push('RunPod API did not expose the endpoint image; the worker will enforce its digest at startup.');
-    const configuredWorkerIdentity = String(
-      endpoint.env?.AITK_WORKER_IMAGE_DIGEST ?? endpoint.template?.env?.AITK_WORKER_IMAGE_DIGEST ?? '',
-    );
+    const readEnvironment = (value: unknown, key: string): string => {
+      if (Array.isArray(value)) {
+        const entry = value.find(item => item && typeof item === 'object' && (item.key === key || item.name === key));
+        return String(entry?.value ?? '');
+      }
+      if (value && typeof value === 'object') return String((value as Record<string, unknown>)[key] ?? '');
+      return '';
+    };
+    const configuredWorkerIdentity =
+      readEnvironment(endpoint.env, 'AITK_WORKER_IMAGE_DIGEST') ||
+      readEnvironment(endpoint.template?.env, 'AITK_WORKER_IMAGE_DIGEST');
     if (configuredWorkerIdentity && configuredWorkerIdentity !== this.config.workerImageDigest) {
       errors.push('RunPod endpoint AITK_WORKER_IMAGE_DIGEST does not match the configured immutable image.');
     } else if (!configuredWorkerIdentity) {

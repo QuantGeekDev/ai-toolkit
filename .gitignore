@@ -191,3 +191,15 @@ aitk_db.db-shm
 /notes.md
 /data
 .claude
+
+# Terraform working data and local operator inputs
+**/.terraform/*
+*.tfstate
+*.tfstate.*
+*.tfplan
+*.tfvars
+!*.tfvars.example
+.terraform.tfstate.lock.info
+crash.log
+crash.*.log
+.runpod-provision.json
