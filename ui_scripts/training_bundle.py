@@ -5,6 +5,13 @@ import json
 import sys
 from pathlib import Path
 
+# Python uses the script's directory as sys.path[0] when this file is launched
+# directly. Add the repository root explicitly so the toolkit package resolves
+# regardless of the controller's current working directory.
+REPOSITORY_ROOT = str(Path(__file__).resolve().parents[1])
+if REPOSITORY_ROOT not in sys.path:
+    sys.path.insert(0, REPOSITORY_ROOT)
+
 from toolkit.training_bundle import (
     BundleValidationError,
     export_training_bundle,

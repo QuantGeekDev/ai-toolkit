@@ -2,6 +2,8 @@ import gzip
 import io
 import json
 import os
+import subprocess
+import sys
 import tarfile
 import tempfile
 import unittest
@@ -66,6 +68,22 @@ class TrainingBundleTests(unittest.TestCase):
     def make_pair(self, root: Path, stem="0001", caption="[trigger], a grainy hallway"):
         Image.new("RGB", (24, 16), "navy").save(root / f"{stem}.png")
         (root / f"{stem}.txt").write_text(caption, encoding="utf-8")
+
+    def test_cli_resolves_toolkit_package_outside_repository(self):
+        script = Path(__file__).resolve().parents[1] / "ui_scripts" / "training_bundle.py"
+        environment = os.environ.copy()
+        environment.pop("PYTHONPATH", None)
+        with tempfile.TemporaryDirectory() as folder:
+            result = subprocess.run(
+                [sys.executable, str(script), "--help"],
+                cwd=folder,
+                env=environment,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("Create or verify an AI Toolkit training bundle", result.stdout)
 
     def test_export_is_deterministic_and_paths_are_portable(self):
         with tempfile.TemporaryDirectory() as folder:
