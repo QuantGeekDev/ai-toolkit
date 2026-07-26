@@ -19,6 +19,11 @@ export type StoredObject = {
   modifiedAt?: Date;
 };
 
+// RunPod documents PutObject for files below 500 MB. Keeping small bundles on
+// that path also avoids creating a multipart upload before the filesystem-like
+// parent path exists on a new network volume.
+const RUNPOD_SINGLE_PUT_MAX_BYTES = 500_000_000;
+
 const normalizeKey = (key: string): string => {
   const normalized = key.replace(/\\/g, '/').replace(/^\/+/, '');
   if (!normalized || normalized.split('/').some(part => !part || part === '.' || part === '..')) {
@@ -29,6 +34,31 @@ const normalizeKey = (key: string): string => {
 
 const isMissing = (error: any): boolean =>
   error?.name === 'NotFound' || error?.name === 'NoSuchKey' || error?.$metadata?.httpStatusCode === 404;
+
+const isRunPodFilesystemMissing = (error: any): boolean =>
+  error?.message === 'Invalid object path' ||
+  (error?.name === 'Unknown' && error?.message === 'UnknownError' && error?.$metadata?.httpStatusCode === 403);
+
+const rawSuccessAfterInvalidHttpDate = (error: any): any | null => {
+  const status = Number(error?.$response?.statusCode || error?.$metadata?.httpStatusCode || 0);
+  return status >= 200 && status < 300 && /Invalid RFC7231 date-time value/i.test(String(error?.message || ''))
+    ? error.$response
+    : null;
+};
+
+const rawHeader = (response: any, name: string): string | undefined => {
+  const value = response?.headers?.[name.toLowerCase()];
+  if (Array.isArray(value)) return value[0];
+  return typeof value === 'string' ? value : undefined;
+};
+
+const compatibleHttpDate = (value: string | undefined): Date | undefined => {
+  if (!value) return undefined;
+  // RunPod currently emits RFC7231-shaped Last-Modified headers ending in
+  // "UTC". RFC7231 requires "GMT", and the JS AWS SDK rejects the former.
+  const parsed = new Date(value.replace(/ UTC$/i, ' GMT'));
+  return Number.isNaN(parsed.getTime()) ? undefined : parsed;
+};
 
 const readBody = async (body: any): Promise<Buffer> => {
   if (!body) return Buffer.alloc(0);
@@ -41,9 +71,15 @@ const readBody = async (body: any): Promise<Buffer> => {
 export class ArtifactStore {
   private readonly client: S3Client;
   private readonly bucket: string;
+  private readonly isRunPodStorage: boolean;
 
   constructor(config: RunPodConfig, client?: S3Client) {
     this.bucket = config.s3Bucket;
+    try {
+      this.isRunPodStorage = /^s3api-.+\.runpod\.io$/i.test(new URL(config.s3Endpoint).hostname);
+    } catch {
+      this.isRunPodStorage = false;
+    }
     this.client =
       client ||
       new S3Client({
@@ -66,7 +102,17 @@ export class ArtifactStore {
         modifiedAt: result.LastModified,
       };
     } catch (error) {
-      if (isMissing(error)) return null;
+      const rawResponse = rawSuccessAfterInvalidHttpDate(error);
+      if (rawResponse) {
+        return {
+          key,
+          size: Number(rawHeader(rawResponse, 'content-length') || 0),
+          etag: rawHeader(rawResponse, 'etag')?.replace(/"/g, ''),
+          sha256: rawHeader(rawResponse, 'x-amz-meta-sha256'),
+          modifiedAt: compatibleHttpDate(rawHeader(rawResponse, 'last-modified')),
+        };
+      }
+      if (isMissing(error) || (this.isRunPodStorage && isRunPodFilesystemMissing(error))) return null;
       throw error;
     }
   }
@@ -96,21 +142,26 @@ export class ArtifactStore {
       throw new Error(`Immutable object collision at ${key}`);
     }
     const stats = await fs.stat(filePath);
-    const upload = new Upload({
-      client: this.client,
-      params: {
-        Bucket: this.bucket,
-        Key: key,
-        Body: createReadStream(filePath),
-        ContentLength: stats.size,
-        ContentType: 'application/gzip',
-        Metadata: { sha256 },
-      },
-      queueSize: 2,
-      partSize: 16 * 1024 * 1024,
-      leavePartsOnError: false,
-    });
-    await upload.done();
+    const uploadParams = {
+      Bucket: this.bucket,
+      Key: key,
+      Body: createReadStream(filePath),
+      ContentLength: stats.size,
+      ContentType: 'application/gzip',
+      Metadata: { sha256 },
+    };
+    if (stats.size < RUNPOD_SINGLE_PUT_MAX_BYTES) {
+      await this.client.send(new PutObjectCommand(uploadParams));
+    } else {
+      const upload = new Upload({
+        client: this.client,
+        params: uploadParams,
+        queueSize: 2,
+        partSize: 16 * 1024 * 1024,
+        leavePartsOnError: false,
+      });
+      await upload.done();
+    }
     // RunPod implements HeadObject, but user-defined metadata behavior can
     // differ across S3-compatible backends. A sidecar is the portable ready
     // marker; the worker still hashes the archive itself before using it.
@@ -146,7 +197,15 @@ export class ArtifactStore {
       );
       return { body: await readBody(result.Body), size: result.ContentLength, contentRange: result.ContentRange };
     } catch (error) {
-      if (isMissing(error)) return null;
+      const rawResponse = rawSuccessAfterInvalidHttpDate(error);
+      if (rawResponse) {
+        return {
+          body: await readBody(rawResponse.body),
+          size: Number(rawHeader(rawResponse, 'content-length') || 0),
+          contentRange: rawHeader(rawResponse, 'content-range'),
+        };
+      }
+      if (isMissing(error) || (this.isRunPodStorage && isRunPodFilesystemMissing(error))) return null;
       throw error;
     }
   }
@@ -163,8 +222,12 @@ export class ArtifactStore {
     try {
       result = await this.client.send(new GetObjectCommand({ Bucket: this.bucket, Key: key }));
     } catch (error) {
-      if (isMissing(error)) return false;
-      throw error;
+      const rawResponse = rawSuccessAfterInvalidHttpDate(error);
+      if (rawResponse) result = { Body: rawResponse.body };
+      else {
+        if (isMissing(error) || (this.isRunPodStorage && isRunPodFilesystemMissing(error))) return false;
+        throw error;
+      }
     }
     await fs.mkdir(path.dirname(destination), { recursive: true });
     const temporary = `${destination}.part-${process.pid}`;

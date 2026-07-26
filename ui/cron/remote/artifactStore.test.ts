@@ -1,4 +1,7 @@
-import { describe, expect, it, vi } from 'vitest';
+import { promises as fs } from 'fs';
+import os from 'os';
+import path from 'path';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ArtifactStore } from './artifactStore';
 import type { RunPodConfig } from './settings';
 
@@ -19,6 +22,12 @@ const config: RunPodConfig = {
   apiBaseUrl: 'https://api.invalid',
   restBaseUrl: 'https://rest.invalid',
 };
+
+const temporaryDirectories: string[] = [];
+
+afterEach(async () => {
+  await Promise.all(temporaryDirectories.splice(0).map(directory => fs.rm(directory, { recursive: true, force: true })));
+});
 
 describe('RunPod volume artifact store', () => {
   it('rejects traversal before issuing an S3 request', async () => {
@@ -41,6 +50,77 @@ describe('RunPod volume artifact store', () => {
     const store = new ArtifactStore(config, client);
     await expect(store.getJson('aitk/state.json')).resolves.toEqual({ ok: true });
     await expect(store.getJson('aitk/missing.json')).resolves.toBeNull();
+  });
+
+  it('recovers HeadObject metadata from RunPod UTC Last-Modified headers', async () => {
+    const error: any = new TypeError('Invalid RFC7231 date-time value Sun, 26 Jul 2026 19:06:35 UTC.');
+    error.$metadata = { httpStatusCode: 200 };
+    error.$response = {
+      statusCode: 200,
+      headers: {
+        'content-length': '123',
+        etag: '"etag"',
+        'last-modified': 'Sun, 26 Jul 2026 19:06:35 UTC',
+        'x-amz-meta-sha256': 'a'.repeat(64),
+      },
+    };
+    const store = new ArtifactStore(config, { send: vi.fn().mockRejectedValue(error) } as any);
+    await expect(store.head('aitk/bundle.tar.gz')).resolves.toEqual({
+      key: 'aitk/bundle.tar.gz',
+      size: 123,
+      etag: 'etag',
+      sha256: 'a'.repeat(64),
+      modifiedAt: new Date('2026-07-26T19:06:35.000Z'),
+    });
+  });
+
+  it('recovers GetObject bodies after RunPod UTC header deserialization failures', async () => {
+    const error: any = new TypeError('Invalid RFC7231 date-time value Sun, 26 Jul 2026 19:06:35 UTC.');
+    error.$metadata = { httpStatusCode: 200 };
+    error.$response = {
+      statusCode: 200,
+      headers: { 'content-length': '11', 'last-modified': 'Sun, 26 Jul 2026 19:06:35 UTC' },
+      body: { transformToByteArray: async () => Buffer.from('{"ok":true}') },
+    };
+    const store = new ArtifactStore(config, { send: vi.fn().mockRejectedValue(error) } as any);
+    await expect(store.getJson('aitk/state.json')).resolves.toEqual({ ok: true });
+  });
+
+  it('treats RunPod filesystem-style missing paths as absent', async () => {
+    const error: any = new Error('UnknownError');
+    error.name = 'Unknown';
+    error.$metadata = { httpStatusCode: 403 };
+    const runPodConfig = { ...config, s3Endpoint: 'https://s3api-us-ca-2.runpod.io' };
+    await expect(new ArtifactStore(runPodConfig, { send: vi.fn().mockRejectedValue(error) } as any).head('aitk/new/file'))
+      .resolves.toBeNull();
+    await expect(new ArtifactStore(config, { send: vi.fn().mockRejectedValue(error) } as any).head('aitk/new/file'))
+      .rejects.toThrow('UnknownError');
+  });
+
+  it('uses PutObject rather than multipart upload for bundles below RunPod\'s 500 MB limit', async () => {
+    const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'aitk-artifact-store-'));
+    temporaryDirectories.push(directory);
+    const filePath = path.join(directory, 'bundle.tar.gz');
+    await fs.writeFile(filePath, 'small bundle');
+    const sha256 = 'b'.repeat(64);
+    const send = vi
+      .fn()
+      .mockRejectedValueOnce(Object.assign(new Error('UnknownError'), {
+        name: 'Unknown',
+        $metadata: { httpStatusCode: 403 },
+      }))
+      .mockResolvedValueOnce({})
+      .mockResolvedValueOnce({})
+      .mockResolvedValueOnce({ ContentLength: 12, Metadata: { sha256 } });
+    const runPodConfig = { ...config, s3Endpoint: 'https://s3api-us-ca-2.runpod.io' };
+    await expect(new ArtifactStore(runPodConfig, { send } as any).putImmutableFile('aitk/new/bundle.tar.gz', filePath, sha256))
+      .resolves.toMatchObject({ size: 12, sha256 });
+    expect(send.mock.calls.map(([command]) => command.constructor.name)).toEqual([
+      'HeadObjectCommand',
+      'PutObjectCommand',
+      'PutObjectCommand',
+      'HeadObjectCommand',
+    ]);
   });
 
   it('paginates prefix listings without trusting ETags as hashes', async () => {
