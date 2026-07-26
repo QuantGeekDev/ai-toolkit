@@ -30,11 +30,13 @@ import {
   forceCancelRemoteJob,
   continueRemoteJob,
   archiveRemoteJob,
+  isKrea2TrainingJob,
 } from '@/utils/jobs';
 import { startQueue } from '@/utils/queue';
 import { Menu, MenuButton, MenuItem, MenuItems } from '@headlessui/react';
 import { redirect } from 'next/navigation';
 import { openCaptionDatasetModal } from '@/components/CaptionDatasetModal';
+import ComfyUIExportButton from '@/components/ComfyUIExportButton';
 
 interface JobActionBarProps {
   job: Job;
@@ -138,6 +140,7 @@ export default function JobActionBar({
           <Pen className={iconSizeClass} />
         </Link>
       )}
+      {isKrea2TrainingJob(job) && <ComfyUIExportButton job={job} iconClassName={iconSizeClass} />}
       {(job.execution_target === 'local' || canDelete) && (
         <Button
           onClick={() => {

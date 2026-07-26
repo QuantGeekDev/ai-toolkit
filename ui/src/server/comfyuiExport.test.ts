@@ -1,0 +1,183 @@
+import { afterEach, describe, expect, it } from 'vitest';
+import fs from 'fs';
+import os from 'os';
+import path from 'path';
+import { buildKrea2Workflow, exportCheckpointToComfyUi, isKrea2JobConfig, listKrea2Checkpoints } from './comfyuiExport';
+
+const temporaryRoots: string[] = [];
+
+const makeRoot = async () => {
+  const root = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'aitk-comfyui-export-'));
+  temporaryRoots.push(root);
+  return root;
+};
+
+const jobConfig = (arch = 'krea2') =>
+  JSON.stringify({
+    config: {
+      process: [
+        {
+          trigger_word: 'test trigger',
+          model: { arch, name_or_path: 'krea/Krea-2-Raw' },
+          sample: {
+            samples: [{ prompt: 'portrait in [trigger]' }],
+            neg: 'blurry',
+            seed: 123,
+            sample_steps: 24,
+            guidance_scale: 3.5,
+          },
+        },
+      ],
+    },
+  });
+
+afterEach(async () => {
+  await Promise.all(temporaryRoots.splice(0).map(root => fs.promises.rm(root, { recursive: true, force: true })));
+});
+
+describe('Krea 2 ComfyUI export', () => {
+  it('recognizes Krea 2 configs without throwing on invalid JSON', () => {
+    expect(isKrea2JobConfig(jobConfig())).toBe(true);
+    expect(isKrea2JobConfig(jobConfig('flux'))).toBe(false);
+    expect(isKrea2JobConfig('{')).toBe(false);
+  });
+
+  it('lists the final checkpoint first and step checkpoints newest-first', async () => {
+    const trainingRoot = await makeRoot();
+    const jobFolder = path.join(trainingRoot, 'test-job');
+    await fs.promises.mkdir(jobFolder);
+    await Promise.all([
+      fs.promises.writeFile(path.join(jobFolder, 'test-job_000000250.safetensors'), '250'),
+      fs.promises.writeFile(path.join(jobFolder, 'test-job_000001000.safetensors'), '1000'),
+      fs.promises.writeFile(path.join(jobFolder, 'test-job.safetensors'), 'final'),
+      fs.promises.writeFile(path.join(jobFolder, 'optimizer.pt'), 'ignored'),
+    ]);
+
+    const checkpoints = await listKrea2Checkpoints(trainingRoot, 'test-job', 1250);
+
+    expect(checkpoints.map(item => item.fileName)).toEqual([
+      'test-job.safetensors',
+      'test-job_000001000.safetensors',
+      'test-job_000000250.safetensors',
+    ]);
+    expect(checkpoints[0]).toMatchObject({ isFinal: true, step: 1250 });
+    expect(checkpoints[1]).toMatchObject({ isFinal: false, step: 1000 });
+  });
+
+  it('builds a workflow with the exported LoRA, job prompts, and in-workflow aspect ratio selector', () => {
+    const workflow = buildKrea2Workflow({
+      jobName: 'test-job',
+      checkpoint: {
+        fileName: 'test-job_000001000.safetensors',
+        label: 'Step 1,000',
+        size: 4,
+        step: 1000,
+        isFinal: false,
+      },
+      loraName: path.join('ai-toolkit', 'test-job', 'test-job_000001000.safetensors'),
+      jobConfig: jobConfig(),
+    });
+
+    expect(workflow.nodes.find(node => node.id === 3)?.widgets_values).toEqual([
+      'krea2_raw_bf16.safetensors',
+      'default',
+    ]);
+    expect(workflow.nodes.find(node => node.id === 4)?.widgets_values).toEqual([
+      path.join('ai-toolkit', 'test-job', 'test-job_000001000.safetensors'),
+      1,
+    ]);
+    expect(workflow.nodes.find(node => node.id === 6)?.widgets_values).toEqual(['portrait in test trigger']);
+    expect(workflow.nodes.find(node => node.id === 8)?.widgets_values).toEqual([
+      '9:16 (Portrait Widescreen)',
+      0.56,
+      16,
+    ]);
+    expect(workflow.nodes.find(node => node.id === 10)?.widgets_values).toEqual([
+      123,
+      'fixed',
+      24,
+      3.5,
+      'res_multistep',
+      'simple',
+      1,
+    ]);
+  });
+
+  it('copies the checkpoint and writes a workflow into the configured ComfyUI folders', async () => {
+    const trainingRoot = await makeRoot();
+    const comfyRoot = await makeRoot();
+    const jobFolder = path.join(trainingRoot, 'test-job');
+    await fs.promises.mkdir(jobFolder);
+    await fs.promises.writeFile(path.join(jobFolder, 'test-job_000000250.safetensors'), 'checkpoint-data');
+
+    const requiredFiles = [
+      path.join(comfyRoot, 'models', 'diffusion_models', 'krea2_raw_bf16.safetensors'),
+      path.join(comfyRoot, 'models', 'text_encoders', 'qwen3vl_4b_bf16.safetensors'),
+      path.join(comfyRoot, 'models', 'vae', 'qwen_image_vae.safetensors'),
+    ];
+    await fs.promises.mkdir(path.join(comfyRoot, 'models', 'loras'), { recursive: true });
+    await fs.promises.mkdir(path.join(comfyRoot, 'user', 'default', 'workflows'), { recursive: true });
+    for (const file of requiredFiles) {
+      await fs.promises.mkdir(path.dirname(file), { recursive: true });
+      await fs.promises.writeFile(file, 'model');
+    }
+
+    const result = await exportCheckpointToComfyUi({
+      trainingRoot,
+      comfyRoot,
+      comfyUiUrl: 'https://comfy.example/',
+      jobName: 'test-job',
+      currentStep: 500,
+      jobConfig: jobConfig(),
+      checkpointFileName: 'test-job_000000250.safetensors',
+    });
+
+    expect(result).toEqual({
+      checkpoint: 'test-job_000000250.safetensors',
+      loraName: path.join('ai-toolkit', 'test-job', 'test-job_000000250.safetensors'),
+      workflowName: 'AI Toolkit - test-job - step-250.json',
+      comfyUiUrl: 'https://comfy.example/',
+    });
+    await expect(
+      fs.promises.readFile(
+        path.join(comfyRoot, 'models', 'loras', 'ai-toolkit', 'test-job', 'test-job_000000250.safetensors'),
+        'utf8',
+      ),
+    ).resolves.toBe('checkpoint-data');
+
+    const workflow = JSON.parse(
+      await fs.promises.readFile(path.join(comfyRoot, 'user', 'default', 'workflows', result.workflowName), 'utf8'),
+    );
+    expect(workflow.nodes.find((node: { id: number }) => node.id === 4).widgets_values[0]).toBe(result.loraName);
+
+    await expect(
+      exportCheckpointToComfyUi({
+        trainingRoot,
+        comfyRoot,
+        comfyUiUrl: 'https://comfy.example/',
+        jobName: 'test-job',
+        currentStep: 500,
+        jobConfig: jobConfig(),
+        checkpointFileName: 'test-job_000000250.safetensors',
+      }),
+    ).resolves.toEqual(result);
+  });
+
+  it('rejects checkpoint path traversal', async () => {
+    const trainingRoot = await makeRoot();
+    const comfyRoot = await makeRoot();
+    await fs.promises.mkdir(path.join(comfyRoot, 'models', 'loras'), { recursive: true });
+    await fs.promises.mkdir(path.join(comfyRoot, 'user', 'default', 'workflows'), { recursive: true });
+    await expect(
+      exportCheckpointToComfyUi({
+        trainingRoot,
+        comfyRoot,
+        comfyUiUrl: 'https://comfy.example/',
+        jobName: 'test-job',
+        currentStep: 0,
+        jobConfig: jobConfig(),
+        checkpointFileName: '../outside.safetensors',
+      }),
+    ).rejects.toThrow('valid checkpoint');
+  });
+});

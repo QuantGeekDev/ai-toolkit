@@ -122,6 +122,15 @@ export const getJobConfig = (job: Job) => {
   return JSON.parse(job.job_config) as JobConfig;
 };
 
+export const isKrea2TrainingJob = (job: Job) => {
+  if (job.job_type !== 'train') return false;
+  try {
+    return getJobConfig(job).config.process[0]?.model?.arch?.toLowerCase() === 'krea2';
+  } catch {
+    return false;
+  }
+};
+
 export const getAvaliableJobActions = (job: Job) => {
   const jobConfig = getJobConfig(job);
   const isStopping = job.stop && job.status === 'running';

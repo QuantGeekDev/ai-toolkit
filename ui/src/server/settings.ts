@@ -48,6 +48,24 @@ export const getTrainingFolder = async () => {
   return trainingRoot as string;
 };
 
+export const getComfyUISettings = async () => {
+  const rows = await prisma.settings.findMany({
+    where: {
+      key: { in: ['COMFYUI_ROOT', 'COMFYUI_URL'] },
+    },
+  });
+  const stored = Object.fromEntries(rows.map(row => [row.key, row.value.trim()]));
+  const root =
+    process.env.COMFYUI_ROOT?.trim() ||
+    stored.COMFYUI_ROOT ||
+    (process.platform === 'win32' ? 'D:\\ComfyUI-Krea2\\ComfyUI' : '');
+  const url = process.env.COMFYUI_URL?.trim() || stored.COMFYUI_URL || 'https://comfyui.andreayalexclub.com/';
+  return {
+    root,
+    url: url.endsWith('/') ? url : `${url}/`,
+  };
+};
+
 export const getHFToken = async () => {
   if (process.env.HF_TOKEN?.trim()) {
     return process.env.HF_TOKEN.trim();
