@@ -55,6 +55,15 @@ const git = async (args: string[]): Promise<string> => {
   return result.stdout.trim();
 };
 
+const sourceRepositoryUrl = async (): Promise<string> => {
+  const remotes = (await git(['remote']))
+    .split(/\r?\n/)
+    .map(value => value.trim())
+    .filter(Boolean);
+  const remoteName = remotes.includes('fork') ? 'fork' : 'origin';
+  return git(['remote', 'get-url', remoteName]).catch(() => '');
+};
+
 const architectureSlug = (jobConfig: any): string =>
   String(jobConfig?.config?.process?.[0]?.model?.arch || 'training')
     .toLowerCase()
@@ -93,7 +102,7 @@ export const exportTrainingBundle = async (
     git(['rev-parse', 'HEAD']),
     git(['branch', '--show-current']),
     git(['status', '--porcelain=v1', '--untracked-files=normal']),
-    git(['config', '--get', 'remote.origin.url']).catch(() => ''),
+    sourceRepositoryUrl(),
   ]);
   const dirty = status.length > 0;
   if (dirty && !options.allowDirty) {

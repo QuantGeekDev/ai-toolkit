@@ -202,7 +202,9 @@ export class RunPodClient {
       ? healthWorkerStates.map(state => Number(healthWorkers[state])).filter(Number.isFinite)
       : [];
     const activeWorkerCount =
-      healthWorkerCounts.length > 0 ? healthWorkerCounts.reduce((total, count) => total + count, 0) : workers.length;
+      // RunPod can report the same ready worker in both `idle` and `ready`;
+      // these fields are overlapping views, not mutually exclusive buckets.
+      healthWorkerCounts.length > 0 ? Math.max(0, ...healthWorkerCounts) : workers.length;
     const endpointRegionsRaw =
       endpoint.dataCenterIds ?? endpoint.data_center_ids ?? endpoint.dataCenterId ?? endpoint.data_center_id ?? [];
     const endpointRegions = (

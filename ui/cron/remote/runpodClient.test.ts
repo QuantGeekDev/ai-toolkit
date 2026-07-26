@@ -182,6 +182,40 @@ describe('RunPod client', () => {
     expect(result).toMatchObject({ ok: true, errors: [] });
   });
 
+  it('does not double-count a worker reported as both idle and ready', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        response([
+          {
+            id: 'endpoint-1',
+            workersMin: 0,
+            workersMax: 1,
+            gpuCount: 1,
+            idleTimeout: 5,
+            computeType: 'GPU',
+            networkVolumeId: 'volume-1',
+            dataCenterIds: ['EU-RO-1'],
+            gpuTypeIds: ['NVIDIA H100 80GB HBM3'],
+            workers: [{ id: 'worker-1' }],
+            template: { image: config.workerImageDigest, env: { AITK_WORKER_IMAGE_DIGEST: config.workerImageDigest } },
+          },
+        ]),
+      )
+      .mockResolvedValueOnce(
+        response({ workers: { idle: 1, initializing: 0, ready: 1, running: 0, unhealthy: 0 } }),
+      ) as any;
+    const result = await new RunPodClient(
+      config,
+      fetchMock,
+      async () => undefined,
+      () => 0,
+    ).preflight();
+    expect(result.ok).toBe(false);
+    expect(result.errors.join(' ')).toContain('1 active worker');
+    expect(result.errors.join(' ')).not.toContain('2 active workers');
+  });
+
   it('falls back to endpoint worker records when health omits worker counts', async () => {
     const fetchMock = vi
       .fn()
