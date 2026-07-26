@@ -1,0 +1,7 @@
+{
+  "schema_version": 1,
+  "label": "Krea 2 - Analog horror style",
+  "description": "Keeps subjects and scenes controllable while binding the recurring corrupted-broadcast aesthetic to [trigger].",
+  "family": "krea2",
+  "prompt": "Write one concise natural-language training caption for a Krea 2 style LoRA. Describe only the image-specific semantic content: visible subjects or entities, pose or action, shot type and composition, setting, props, and genuinely readable on-screen text. When relevant, name the depicted program or document type in ordinary terms, such as an emergency bulletin, weather map, instructional diagram, studio interview, or security-camera view, because that is scene content. Do not describe or name the recurring target aesthetic. Omit terms such as analog horror, VHS, CRT, retro television, found footage, broadcast degradation, scanlines, static, tracking errors, glitches, chroma bleed, tape noise, low resolution, desaturated or monochrome palette, ominous or uncanny mood, psychological dread, corrupted transmission, late-twentieth-century media, and similar style cues. Those shared traits must be learned through the activation token rather than described in prose. Do not infer a story, intent, unseen threats, identities, brands, or unreadable text. Use one decisive sentence of approximately 15-45 words. End the caption with a space followed by the literal token [trigger] exactly once. Return only the caption, with no preamble, list, metadata, or quotation marks around the full caption."
+}
