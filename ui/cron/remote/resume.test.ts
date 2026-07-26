@@ -5,7 +5,7 @@ import {
   latestCheckpointStep,
   remoteProgressStep,
   type RemoteResumeCandidate,
-} from './remoteResume';
+} from './resume';
 
 const execution = (overrides: Partial<RemoteResumeCandidate> = {}): RemoteResumeCandidate => ({
   state: 'error',

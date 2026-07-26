@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/server/prisma';
-import { isRemoteResumeCandidate } from '@/server/remoteResume';
+import { isRemoteResumeCandidate } from '../../../../../../cron/remote/resume';
 
 export async function POST(request: NextRequest, { params }: { params: Promise<{ jobID: string }> }) {
   const { jobID } = await params;

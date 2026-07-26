@@ -13,7 +13,7 @@ import {
   isInterruptedRemoteResumeCandidate,
   isRemoteResumeCandidate,
   latestCheckpointStep,
-} from '../../src/server/remoteResume';
+} from '../remote/resume';
 
 const digestRequest = (value: unknown): string =>
   `sha256:${createHash('sha256').update(JSON.stringify(value)).digest('hex')}`;
