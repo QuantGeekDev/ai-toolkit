@@ -16,6 +16,10 @@ def main() -> int:
     parser.add_argument("--max-cost", required=True, type=float)
     parser.add_argument("--hard-deadline-minutes", type=int, default=15)
     parser.add_argument(
+        "--registry-auth-id",
+        default=os.environ.get("RUNPOD_COMFY_REGISTRY_AUTH_ID", "").strip(),
+    )
+    parser.add_argument(
         "--output",
         type=Path,
         default=Path(__file__).with_name("capability-contract.json"),
@@ -32,6 +36,8 @@ def main() -> int:
             str(args.max_cost),
             "--hard-deadline-minutes",
             str(args.hard_deadline_minutes),
+            "--registry-auth-id",
+            args.registry_auth_id,
             "--output",
             str(args.output),
         ]

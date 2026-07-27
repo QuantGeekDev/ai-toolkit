@@ -7,6 +7,7 @@ const config = {
   graphQlUrl: 'https://api.runpod.test/graphql',
   restBaseUrl: 'https://rest.runpod.test/v1',
   imageDigest: `ghcr.io/example/comfy@sha256:${'a'.repeat(64)}`,
+  registryAuthId: 'registry-auth-1',
   gpuIds: ['NVIDIA H100 80GB HBM3'],
   maxHourlyRate: 3.5,
 } as RunPodComfyConfig;
@@ -27,6 +28,7 @@ describe('Comfy Pod client', () => {
       expect(request.variables.input).toMatchObject({
         cloudType: 'SECURE',
         containerDiskInGb: 120,
+        containerRegistryAuthId: 'registry-auth-1',
         gpuCount: 1,
         gpuTypeId: 'NVIDIA H100 80GB HBM3',
         imageName: config.imageDigest,

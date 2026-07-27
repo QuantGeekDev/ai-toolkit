@@ -25,6 +25,7 @@ const valid = (): RunPodComfyConfig => ({
   capacityWaitMinutes: 15,
   maxActive: 1,
   hfSecretName: 'aitk_hf_read',
+  registryAuthId: 'registry-auth-1',
   stagingDirectory: 'C:\\secure\\comfy-staging',
   capabilityReportPath: 'C:\\secure\\comfy-capability.json',
   graphQlUrl: 'https://api.runpod.io/graphql',
@@ -78,6 +79,11 @@ describe('RunPod ComfyUI settings', () => {
     ['mutable image', (value: RunPodComfyConfig) => (value.imageDigest = 'ghcr.io/example/comfy:latest'), 'immutable'],
     ['GPU fallback', (value: RunPodComfyConfig) => value.gpuIds.push('NVIDIA A100'), 'H100'],
     ['too many workspaces', (value: RunPodComfyConfig) => (value.maxActive = 2), 'MAX_ACTIVE'],
+    [
+      'invalid registry auth ID',
+      (value: RunPodComfyConfig) => (value.registryAuthId = 'bad id'),
+      'REGISTRY_AUTH_ID',
+    ],
     ['relative staging', (value: RunPodComfyConfig) => (value.stagingDirectory = 'output/staging'), 'must be absolute'],
   ])('rejects %s', (_name, mutate, expected) => {
     const config = valid();

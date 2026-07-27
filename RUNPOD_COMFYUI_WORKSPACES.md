@@ -59,6 +59,7 @@ RUNPOD_COMFY_OUTPUT_ALLOWANCE_GB=20
 RUNPOD_COMFY_CAPACITY_WAIT_MINUTES=15
 RUNPOD_COMFY_MAX_ACTIVE=1
 RUNPOD_COMFY_HF_SECRET_NAME=aitk_hf_read
+RUNPOD_COMFY_REGISTRY_AUTH_ID=<RunPod credential ID for a private image>
 RUNPOD_COMFY_LOCAL_STAGING_DIRECTORY=C:\secure\ai-toolkit-comfy-staging
 RUNPOD_COMFY_CAPABILITY_REPORT=C:\path\to\capability-contract.json
 ```
@@ -75,6 +76,12 @@ ssh-keygen -t ed25519 -f C:\secure\ai-toolkit-comfy-ed25519 -C aitk-comfy-sftp
 
 Create a RunPod secret named `aitk_hf_read` with a read-only Hugging Face
 token. AI Toolkit passes only the RunPod secret reference.
+
+For a private image, create a RunPod container-registry authentication whose
+password is a registry token with pull-only package access, then set
+`RUNPOD_COMFY_REGISTRY_AUTH_ID` to the returned non-secret ID. The registry
+username/token are stored only by RunPod and are never sent to a Pod or saved
+in AI Toolkit.
 
 ## Build, preflight, and provisioning
 
@@ -106,6 +113,7 @@ $env:RUNPOD_LIVE_TEST='1'
 python remote/runpod/comfyui/acceptance.py `
   --live `
   --image ghcr.io/OWNER/IMAGE@sha256:DIGEST `
+  --registry-auth-id $env:RUNPOD_COMFY_REGISTRY_AUTH_ID `
   --hard-deadline-minutes 15 `
   --max-cost 2.00 `
   --output remote/runpod/comfyui/capability-contract.json
@@ -118,8 +126,8 @@ Automatic creation must stay disabled unless the report has
 The optional reusable template is plan-only by default:
 
 ```powershell
-python remote/runpod/comfyui/provision.py --image ghcr.io/OWNER/IMAGE@sha256:DIGEST
-python remote/runpod/comfyui/provision.py --apply --image ghcr.io/OWNER/IMAGE@sha256:DIGEST
+python remote/runpod/comfyui/provision.py --image ghcr.io/OWNER/IMAGE@sha256:DIGEST --registry-auth-id $env:RUNPOD_COMFY_REGISTRY_AUTH_ID
+python remote/runpod/comfyui/provision.py --apply --image ghcr.io/OWNER/IMAGE@sha256:DIGEST --registry-auth-id $env:RUNPOD_COMFY_REGISTRY_AUTH_ID
 ```
 
 It refuses drift and has no persistent or network volume. Dynamic workspace

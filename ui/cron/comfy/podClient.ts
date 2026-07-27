@@ -204,6 +204,9 @@ export class ComfyPodClient {
     const graphInput = {
       cloudType: 'SECURE',
       containerDiskInGb: input.containerDiskGb,
+      ...(this.config.registryAuthId
+        ? { containerRegistryAuthId: this.config.registryAuthId }
+        : {}),
       env: Object.entries(input.environment).map(([key, value]) => ({ key, value })),
       gpuCount: 1,
       gpuTypeId: input.gpuId,

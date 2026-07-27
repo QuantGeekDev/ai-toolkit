@@ -18,6 +18,7 @@ export const RUNPOD_COMFY_SETTING_KEYS = [
   'RUNPOD_COMFY_CAPACITY_WAIT_MINUTES',
   'RUNPOD_COMFY_MAX_ACTIVE',
   'RUNPOD_COMFY_HF_SECRET_NAME',
+  'RUNPOD_COMFY_REGISTRY_AUTH_ID',
   'RUNPOD_COMFY_SSH_PUBLIC_KEY',
   'RUNPOD_COMFY_LOCAL_STAGING_DIRECTORY',
   'RUNPOD_COMFY_CAPABILITY_REPORT',
@@ -45,6 +46,7 @@ export type RunPodComfyConfig = {
   capacityWaitMinutes: number;
   maxActive: number;
   hfSecretName: string;
+  registryAuthId: string;
   stagingDirectory: string;
   capabilityReportPath: string;
   graphQlUrl: string;
@@ -95,6 +97,7 @@ export const getRunPodComfyConfig = async (): Promise<RunPodComfyConfig> => {
     capacityWaitMinutes: asNumber(value('RUNPOD_COMFY_CAPACITY_WAIT_MINUTES'), 15),
     maxActive: asNumber(value('RUNPOD_COMFY_MAX_ACTIVE'), 1),
     hfSecretName: value('RUNPOD_COMFY_HF_SECRET_NAME', 'aitk_hf_read'),
+    registryAuthId: value('RUNPOD_COMFY_REGISTRY_AUTH_ID'),
     stagingDirectory: value('RUNPOD_COMFY_LOCAL_STAGING_DIRECTORY', defaultStaging),
     capabilityReportPath: value('RUNPOD_COMFY_CAPABILITY_REPORT', defaultCapabilityReport),
     graphQlUrl: process.env.RUNPOD_GRAPHQL_URL?.trim() || 'https://api.runpod.io/graphql',
@@ -168,6 +171,9 @@ export const validateRunPodComfyConfig = (config: RunPodComfyConfig, checkFiles 
   if (config.maxActive !== 1) errors.push('RUNPOD_COMFY_MAX_ACTIVE must be 1 in this release.');
   if (!/^[A-Za-z0-9][A-Za-z0-9_.-]{1,62}$/.test(config.hfSecretName)) {
     errors.push('RUNPOD_COMFY_HF_SECRET_NAME is invalid.');
+  }
+  if (config.registryAuthId && !/^[A-Za-z0-9][A-Za-z0-9_-]{5,127}$/.test(config.registryAuthId)) {
+    errors.push('RUNPOD_COMFY_REGISTRY_AUTH_ID is invalid.');
   }
   if (!path.isAbsolute(config.stagingDirectory)) {
     errors.push('RUNPOD_COMFY_LOCAL_STAGING_DIRECTORY must be absolute.');

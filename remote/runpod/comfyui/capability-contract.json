@@ -1,5 +1,5 @@
 {
-  "checkedAt": "2026-07-27T14:28:42.739587+00:00",
+  "checkedAt": "2026-07-27T14:37:44.802929+00:00",
   "encryptedPodLocalVolume": {
     "adopted": false,
     "reason": "Container-only storage retained; no verified encrypted zero-network-volume API contract."
@@ -22,6 +22,7 @@
     "inputFields": [
       "cloudType",
       "containerDiskInGb",
+      "containerRegistryAuthId",
       "gpuTypeId",
       "imageName",
       "ports",

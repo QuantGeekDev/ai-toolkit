@@ -50,10 +50,11 @@ def rows(value: Any, key: str) -> list[dict[str, Any]]:
     return []
 
 
-def template_spec(name: str, image: str, hf_secret: str) -> dict[str, Any]:
+def template_spec(name: str, image: str, hf_secret: str, registry_auth_id: str = "") -> dict[str, Any]:
     return {
         "category": "NVIDIA",
         "containerDiskInGb": 100,
+        **({"containerRegistryAuthId": registry_auth_id} if registry_auth_id else {}),
         "dockerEntrypoint": [],
         "dockerStartCmd": [],
         "env": {
@@ -88,6 +89,10 @@ def equivalent(actual: dict[str, Any], expected: dict[str, Any]) -> bool:
         and environment == expected["env"]
         and entrypoint == []
         and actual.get("dockerStartCmd", actual.get("docker_start_cmd", [])) == []
+        and (
+            actual.get("containerRegistryAuthId", actual.get("container_registry_auth_id", "")) or ""
+        )
+        == expected.get("containerRegistryAuthId", "")
     )
 
 
@@ -96,6 +101,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--image", required=True)
     parser.add_argument("--name", default="aitk-comfy-krea2-turbo")
     parser.add_argument("--hf-secret-name", default="aitk_hf_read")
+    parser.add_argument(
+        "--registry-auth-id",
+        default=os.environ.get("RUNPOD_COMFY_REGISTRY_AUTH_ID", "").strip(),
+        help="RunPod container registry credential ID for a private image",
+    )
     parser.add_argument("--apply", action="store_true")
     parser.add_argument("--output", type=Path)
     args = parser.parse_args(argv)
@@ -106,7 +116,7 @@ def main(argv: list[str] | None = None) -> int:
     api_key = os.environ.get("RUNPOD_API_KEY", "").strip()
     if not api_key:
         raise ProvisionError("RUNPOD_API_KEY must be provided through the environment")
-    expected = template_spec(args.name, args.image, args.hf_secret_name)
+    expected = template_spec(args.name, args.image, args.hf_secret_name, args.registry_auth_id)
     templates = rows(request(api_key, "GET", "templates"), "templates")
     matches = [item for item in templates if item.get("name") == args.name]
     if len(matches) > 1:
@@ -135,6 +145,7 @@ def main(argv: list[str] | None = None) -> int:
         "containerDiskInGb": 100,
         "volumeInGb": 0,
         "networkVolumeId": None,
+        "privateRegistryCredentialUsed": bool(args.registry_auth_id),
     }
     rendered = json.dumps(result, indent=2, sort_keys=True) + "\n"
     if args.output:

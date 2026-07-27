@@ -473,6 +473,7 @@ export default function Settings() {
                     ['RUNPOD_COMFY_CAPACITY_WAIT_MINUTES', 'Capacity wait minutes', '15'],
                     ['RUNPOD_COMFY_MAX_ACTIVE', 'Maximum active workspaces', '1'],
                     ['RUNPOD_COMFY_HF_SECRET_NAME', 'RunPod Hugging Face secret name', 'aitk_hf_read'],
+                    ['RUNPOD_COMFY_REGISTRY_AUTH_ID', 'RunPod private-registry credential ID', 'clzdaifot0001l90809257ynb'],
                     ['RUNPOD_COMFY_SSH_PUBLIC_KEY', 'Restricted SFTP public key', 'ssh-ed25519 AAAA...'],
                     [
                       'RUNPOD_COMFY_LOCAL_STAGING_DIRECTORY',

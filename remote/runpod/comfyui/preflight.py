@@ -110,7 +110,16 @@ def verify_provider_contract(api_key: str) -> dict[str, Any]:
         # Some production GraphQL deployments disable introspection. The live
         # gate below remains authoritative for terminateAfter.
         fields = []
-    required = {"cloudType", "containerDiskInGb", "gpuTypeId", "imageName", "ports", "volumeInGb", "terminateAfter"}
+    required = {
+        "cloudType",
+        "containerDiskInGb",
+        "containerRegistryAuthId",
+        "gpuTypeId",
+        "imageName",
+        "ports",
+        "volumeInGb",
+        "terminateAfter",
+    }
     source_contract: dict[str, Any] | None = None
     if fields:
         missing = sorted(required - set(fields))
@@ -167,6 +176,7 @@ def create_probe(
     image: str,
     token: str,
     expires: datetime,
+    registry_auth_id: str = "",
     cross_target: str = "",
 ) -> dict[str, Any]:
     environment = {
@@ -182,6 +192,7 @@ def create_probe(
             "input": {
                 "cloudType": "SECURE",
                 "containerDiskInGb": 100,
+                **({"containerRegistryAuthId": registry_auth_id} if registry_auth_id else {}),
                 "env": [{"key": key, "value": value} for key, value in environment.items()],
                 "gpuCount": 1,
                 "gpuTypeId": "NVIDIA H100 80GB HBM3",
@@ -262,7 +273,13 @@ def wait_proof(pod_id: str, token: str, timeout: float = 300) -> dict[str, Any]:
     raise GateError("Capability probe did not become reachable")
 
 
-def live_gate(api_key: str, image: str, hard_minutes: int, max_cost: float) -> dict[str, Any]:
+def live_gate(
+    api_key: str,
+    image: str,
+    hard_minutes: int,
+    max_cost: float,
+    registry_auth_id: str = "",
+) -> dict[str, Any]:
     run_id = uuid.uuid4().hex[:12]
     pods: list[str] = []
     tokens: dict[str, str] = {}
@@ -276,6 +293,7 @@ def live_gate(api_key: str, image: str, hard_minutes: int, max_cost: float) -> d
             image=image,
             token=hard_token,
             expires=deadline,
+            registry_auth_id=registry_auth_id,
         )
         hard_pod_id = str(hard["id"])
         pods.append(hard_pod_id)
@@ -295,6 +313,7 @@ def live_gate(api_key: str, image: str, hard_minutes: int, max_cost: float) -> d
             image=image,
             token=self_token,
             expires=deadline,
+            registry_auth_id=registry_auth_id,
             cross_target=hard_pod_id,
         )
         self_id = str(self_pod["id"])
@@ -360,6 +379,7 @@ def live_gate(api_key: str, image: str, hard_minutes: int, max_cost: float) -> d
             "providerTerminateAfterConfirmed": True,
             "networkVolume": False,
             "persistentVolumeGb": 0,
+            "privateRegistryCredentialUsed": bool(registry_auth_id),
             "estimatedMaximumCostUsd": round(estimated_max_cost, 4),
             "softwareContract": software_contract,
             "runtimeContract": runtime_contract,
@@ -387,6 +407,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--image", help="Immutable capability/production image digest for --live")
     parser.add_argument("--hard-deadline-minutes", type=int, default=15)
     parser.add_argument("--max-cost", type=float, help="Maximum estimated USD for the two-Pod live gate")
+    parser.add_argument(
+        "--registry-auth-id",
+        default=os.environ.get("RUNPOD_COMFY_REGISTRY_AUTH_ID", "").strip(),
+        help="RunPod container registry credential ID for a private image",
+    )
     parser.add_argument("--output", type=Path)
     args = parser.parse_args(argv)
     api_key = os.environ.get("RUNPOD_API_KEY", "").strip()
@@ -410,7 +435,13 @@ def main(argv: list[str] | None = None) -> int:
             raise GateError("--hard-deadline-minutes must be 3-15")
         if args.max_cost is None or not 0 < args.max_cost <= 10:
             raise GateError("--live requires --max-cost between 0 and 10 USD")
-        report["live"] = live_gate(api_key, args.image, args.hard_deadline_minutes, args.max_cost)
+        report["live"] = live_gate(
+            api_key,
+            args.image,
+            args.hard_deadline_minutes,
+            args.max_cost,
+            args.registry_auth_id,
+        )
         _, pods_value = http_json(f"{REST}/pods", api_key=api_key)
         current = pods_value if isinstance(pods_value, list) else pods_value.get("pods", [])
         remaining = [
