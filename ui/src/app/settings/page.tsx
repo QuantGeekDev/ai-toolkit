@@ -13,6 +13,8 @@ export default function Settings() {
   const [testMessage, setTestMessage] = useState('');
   const [runPodTestStatus, setRunPodTestStatus] = useState<'idle' | 'testing' | 'success' | 'error'>('idle');
   const [runPodTestMessage, setRunPodTestMessage] = useState('');
+  const [comfyTestStatus, setComfyTestStatus] = useState<'idle' | 'testing' | 'success' | 'error'>('idle');
+  const [comfyTestMessage, setComfyTestMessage] = useState('');
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -124,6 +126,23 @@ export default function Settings() {
       setRunPodTestStatus('error');
       const body = error.response?.data;
       setRunPodTestMessage(body?.errors?.join(' ') || body?.error || 'RunPod preflight failed.');
+    }
+  };
+
+  const testRunPodComfy = async () => {
+    setComfyTestStatus('testing');
+    setComfyTestMessage('');
+    try {
+      await apiClient.post('/api/settings', settings);
+      const response = await apiClient.post('/api/settings/providers/runpod-comfy/test');
+      setComfyTestStatus('success');
+      setComfyTestMessage(
+        `Read-only checks passed for ${response.data.gpuIds.join(' or ')}; ${response.data.managedPodCount} managed Pod(s) currently visible.`,
+      );
+    } catch (error: any) {
+      setComfyTestStatus('error');
+      const body = error.response?.data;
+      setComfyTestMessage(body?.errors?.join(' ') || body?.error || 'Temporary H100 configuration test failed.');
     }
   };
 
@@ -407,6 +426,95 @@ export default function Settings() {
                   {runPodTestMessage && (
                     <p className={`mt-2 text-sm ${runPodTestStatus === 'success' ? 'text-green-500' : 'text-red-500'}`}>
                       {runPodTestMessage}
+                    </p>
+                  )}
+                </div>
+
+                <div className="rounded-lg border border-violet-800 bg-violet-950/10 p-4">
+                  <h2 className="text-sm font-medium text-violet-100">Temporary RunPod H100 ComfyUI</h2>
+                  <p className="mt-1 text-sm text-gray-400">
+                    Creates one billable Secure Cloud H100 Pod with no network volume. Every workspace has a
+                    provider-enforced maximum lifetime and deletes itself after 60 idle minutes. It is never stopped or
+                    restarted.
+                  </p>
+                  <div className="mt-3 text-xs text-gray-400">
+                    Status: {settings.RUNPOD_COMFY_ENABLED ? 'enabled' : 'disabled'} · RunPod API key{' '}
+                    {settings.RUNPOD_COMFY_SECRETS.apiKeyConfigured ? 'configured' : 'missing'} · app authentication{' '}
+                    {settings.RUNPOD_COMFY_SECRETS.deploymentAuthConfigured ? 'configured' : 'missing'} · controller
+                    secret {settings.RUNPOD_COMFY_SECRETS.masterSecretConfigured ? 'configured' : 'missing'} · SFTP key{' '}
+                    {settings.RUNPOD_COMFY_SECRETS.privateKeyConfigured ? 'configured' : 'missing'}
+                  </div>
+                  {settings.RUNPOD_COMFY_ACTIVE_WORKSPACE && (
+                    <p className="mt-2 rounded border border-amber-800 bg-amber-950/30 px-2 py-2 text-xs text-amber-100">
+                      Active workspace {settings.RUNPOD_COMFY_ACTIVE_WORKSPACE.id.slice(0, 8)} ·{' '}
+                      {settings.RUNPOD_COMFY_ACTIVE_WORKSPACE.state}
+                      {settings.RUNPOD_COMFY_ACTIVE_WORKSPACE.hourlyRate != null
+                        ? ` · $${settings.RUNPOD_COMFY_ACTIVE_WORKSPACE.hourlyRate.toFixed(2)}/hour`
+                        : ''}
+                    </p>
+                  )}
+                  {settings.RUNPOD_COMFY_CONFIGURATION_ERRORS.length > 0 && (
+                    <ul className="mt-3 list-disc space-y-1 pl-5 text-xs text-amber-300">
+                      {settings.RUNPOD_COMFY_CONFIGURATION_ERRORS.map(message => (
+                        <li key={message}>{message}</li>
+                      ))}
+                    </ul>
+                  )}
+                  {[
+                    ['RUNPOD_COMFY_IMAGE_DIGEST', 'Immutable ComfyUI image', 'ghcr.io/owner/image@sha256:...'],
+                    ['RUNPOD_COMFY_GPU_IDS', 'Allowed H100 GPU IDs', 'NVIDIA H100 80GB HBM3,NVIDIA H100 PCIe'],
+                    ['RUNPOD_COMFY_MAX_HOURLY_RATE', 'Maximum hourly rate (USD)', '3.50'],
+                    ['RUNPOD_COMFY_DEFAULT_MAX_HOURS', 'Default maximum hours', '2'],
+                    ['RUNPOD_COMFY_ALLOWED_MAX_HOURS', 'Allowed maximum hours', '1,2,4,8'],
+                    ['RUNPOD_COMFY_IDLE_MINUTES', 'Idle deletion minutes', '60'],
+                    ['RUNPOD_COMFY_MIN_CONTAINER_DISK_GB', 'Minimum container disk GB', '100'],
+                    ['RUNPOD_COMFY_MAX_CONTAINER_DISK_GB', 'Maximum container disk GB', '200'],
+                    ['RUNPOD_COMFY_OUTPUT_ALLOWANCE_GB', 'Generated-output allowance GB', '20'],
+                    ['RUNPOD_COMFY_CAPACITY_WAIT_MINUTES', 'Capacity wait minutes', '15'],
+                    ['RUNPOD_COMFY_MAX_ACTIVE', 'Maximum active workspaces', '1'],
+                    ['RUNPOD_COMFY_HF_SECRET_NAME', 'RunPod Hugging Face secret name', 'aitk_hf_read'],
+                    ['RUNPOD_COMFY_SSH_PUBLIC_KEY', 'Restricted SFTP public key', 'ssh-ed25519 AAAA...'],
+                    [
+                      'RUNPOD_COMFY_LOCAL_STAGING_DIRECTORY',
+                      'Local immutable staging directory',
+                      'C:\\secure\\ai-toolkit-comfy-staging',
+                    ],
+                    [
+                      'RUNPOD_COMFY_CAPABILITY_REPORT',
+                      'Live capability report',
+                      'C:\\path\\to\\capability-contract.json',
+                    ],
+                  ].map(([name, label, placeholder]) => (
+                    <div key={name} className="mt-3">
+                      <label htmlFor={name} className="block text-sm font-medium">
+                        {label}
+                      </label>
+                      <input
+                        type="text"
+                        id={name}
+                        name={name}
+                        value={String(settings[name as keyof typeof settings] || '')}
+                        onChange={handleChange}
+                        className="mt-1 w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2"
+                        placeholder={placeholder}
+                      />
+                    </div>
+                  ))}
+                  <p className="mt-3 text-xs text-gray-500">
+                    Required secrets are environment-only and never saved here. Model contract:{' '}
+                    <code>{settings.RUNPOD_COMFY_MODEL_MANIFEST_SHA256.slice(0, 16) || 'unavailable'}…</code>
+                  </p>
+                  <button
+                    type="button"
+                    disabled={comfyTestStatus === 'testing'}
+                    onClick={testRunPodComfy}
+                    className="mt-4 rounded bg-violet-800 px-3 py-2 text-white hover:bg-violet-700 disabled:opacity-50"
+                  >
+                    {comfyTestStatus === 'testing' ? 'Testing…' : 'Save and test temporary H100 configuration'}
+                  </button>
+                  {comfyTestMessage && (
+                    <p className={`mt-2 text-sm ${comfyTestStatus === 'success' ? 'text-green-500' : 'text-red-500'}`}>
+                      {comfyTestMessage}
                     </p>
                   )}
                 </div>

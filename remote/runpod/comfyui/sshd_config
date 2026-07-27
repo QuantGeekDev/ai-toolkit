@@ -1,0 +1,24 @@
+Port 22
+ListenAddress 0.0.0.0
+Protocol 2
+HostKey /etc/ssh/ssh_host_ed25519_key
+PasswordAuthentication no
+KbdInteractiveAuthentication no
+PermitRootLogin no
+PermitEmptyPasswords no
+PubkeyAuthentication yes
+AuthorizedKeysFile /home/aitk/.ssh/authorized_keys
+AllowUsers aitk-upload
+AllowAgentForwarding no
+AllowTcpForwarding no
+GatewayPorts no
+PermitTunnel no
+X11Forwarding no
+PermitUserEnvironment no
+PrintMotd no
+Subsystem sftp internal-sftp
+
+Match User aitk-upload
+    ChrootDirectory /srv/sftp
+    ForceCommand internal-sftp -d /incoming -u 0007
+    DisableForwarding yes

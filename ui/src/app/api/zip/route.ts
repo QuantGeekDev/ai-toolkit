@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import fs from 'fs';
 import fsp from 'fs/promises';
 import path from 'path';
-import archiver from 'archiver';
+import * as archiverModule from 'archiver';
 import { getTrainingFolder } from '@/server/settings';
 
 export const runtime = 'nodejs'; // ensure Node APIs are available
@@ -47,7 +47,17 @@ export async function POST(request: NextRequest) {
     // Create write stream & archive
     await new Promise<void>((resolve, reject) => {
       const output = fs.createWriteStream(outputPath);
-      const archive = archiver('zip', { zlib: { level: 9 } });
+      // Archiver 8 is ESM-only and exposes format-specific constructors. Its
+      // DefinitelyTyped package still describes the pre-v8 callable export.
+      const ZipArchive = (
+        archiverModule as unknown as {
+          ZipArchive: new (options?: { zlib?: { level?: number } }) => NodeJS.ReadWriteStream & {
+            directory(source: string, destination: string): unknown;
+            finalize(): Promise<void>;
+          };
+        }
+      ).ZipArchive;
+      const archive = new ZipArchive({ zlib: { level: 9 } });
 
       output.on('close', () => resolve());
       output.on('error', reject);

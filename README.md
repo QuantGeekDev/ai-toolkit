@@ -2,6 +2,9 @@
 
 Hosted vision-model dataset captioning is documented in [Cloud API captioning](CLOUD_CAPTIONING.md).
 
+Temporary authenticated RunPod H100 workspaces for Krea 2 Turbo BF16 ComfyUI
+are documented in [Ephemeral RunPod ComfyUI workspaces](RUNPOD_COMFYUI_WORKSPACES.md).
+
 AI Toolkit is an easy to use all in one training suite for diffusion models. I try to support all the latest models on consumer grade hardware. Image and video models. It can be run as a GUI or CLI. It is designed to be easy to use but still have every feature imaginable. Free and open source.
 
 

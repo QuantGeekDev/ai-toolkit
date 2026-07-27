@@ -3,7 +3,7 @@
 You are resuming a production implementation task on a Windows host. Do not stop at analysis or produce another plan: read the existing implementation plan completely, validate its external assumptions against current official provider documentation, then implement, test, provision, deploy, and commit the feature in full. Keep working through safe, in-scope problems until the definition of done and applicable acceptance tests are satisfied. If a live provider capability or credential is genuinely unavailable, complete all independent work first and report the exact remaining blocker with evidence; never silently weaken a security, deletion, model, or cost invariant.
 
 ## Primary objective
-
+cq
 Add a button and lifecycle UI to the locally hosted AI Toolkit website that creates a temporary authenticated ComfyUI workspace on a RunPod Secure Cloud H100 for evaluating Krea 2 LoRAs. A user who only has website access must be able to launch the workspace, open ComfyUI, compare the No LoRA baseline with every saved checkpoint in one workflow by default, optionally choose one checkpoint instead, switch between 9:16 and 16:9 inside the workflow, generate images, preserve selected outputs locally, and terminate the workspace without access to the server's file explorer.
 
 The existing local ComfyUI must be allowed to remain down throughout the remote flow.

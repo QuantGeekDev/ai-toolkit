@@ -1,5 +1,28 @@
 # RunPod remote training acceptance checklist
 
+## Ephemeral ComfyUI gate
+
+Krea 2 Turbo ComfyUI workspaces have a separate gate:
+
+```powershell
+python remote/runpod/comfyui/preflight.py `
+  --output remote/runpod/comfyui/capability-contract.json
+
+$env:RUNPOD_LIVE_TEST='1'
+python remote/runpod/comfyui/acceptance.py `
+  --live `
+  --image ghcr.io/OWNER/IMAGE@sha256:DIGEST `
+  --hard-deadline-minutes 15 `
+  --max-cost 2.00 `
+  --output remote/runpod/comfyui/capability-contract.json
+Remove-Item Env:RUNPOD_LIVE_TEST
+```
+
+Release requires `podScopedKeyPresent`, `crossPodDeleteDenied`,
+`selfDeleteConfirmed`, and `providerTerminateAfterConfirmed`. Confirm no
+random `aitk-comfy-capability-*` Pod from the report remains. Never touch
+pre-existing non-managed Pods or volumes.
+
 Run `powershell -ExecutionPolicy Bypass -File testing/run_remote_contract_tests.ps1` before any paid test. It validates deterministic bundles, archive traversal defenses, caption provenance, private control DB behavior, idempotent worker claims, secret redaction, safe RunPod retry policy, endpoint preflight logic, existing UI helpers, and the cron TypeScript build without allocating a GPU.
 
 ## Paid H100 smoke test

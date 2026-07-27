@@ -1,5 +1,11 @@
 # RunPod bootstrap
 
+This document covers persistent-network-volume Serverless training. The
+isolated, zero-volume interactive ComfyUI Pod integration is documented in
+[`RUNPOD_COMFYUI_WORKSPACES.md`](../../RUNPOD_COMFYUI_WORKSPACES.md). Do not
+reuse the training template, endpoint, S3 credentials, or network volume for
+ComfyUI.
+
 RunPod resources are provisioned with the official REST API through
 `remote/runpod/provision.py`. The utility is idempotent by name, refuses
 configuration drift, and is plan-only until `--apply` is supplied.

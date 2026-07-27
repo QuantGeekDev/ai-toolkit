@@ -45,6 +45,37 @@ export interface Settings {
   AWS_ARCHIVE_REGION: string;
   AWS_ARCHIVE_PREFIX: string;
   AWS_PROFILE_CONFIGURED: boolean;
+  RUNPOD_COMFY_ENABLED: boolean;
+  RUNPOD_COMFY_IMAGE_DIGEST: string;
+  RUNPOD_COMFY_GPU_IDS: string;
+  RUNPOD_COMFY_MAX_HOURLY_RATE: string;
+  RUNPOD_COMFY_DEFAULT_MAX_HOURS: string;
+  RUNPOD_COMFY_ALLOWED_MAX_HOURS: string;
+  RUNPOD_COMFY_IDLE_MINUTES: string;
+  RUNPOD_COMFY_MIN_CONTAINER_DISK_GB: string;
+  RUNPOD_COMFY_MAX_CONTAINER_DISK_GB: string;
+  RUNPOD_COMFY_OUTPUT_ALLOWANCE_GB: string;
+  RUNPOD_COMFY_CAPACITY_WAIT_MINUTES: string;
+  RUNPOD_COMFY_MAX_ACTIVE: string;
+  RUNPOD_COMFY_HF_SECRET_NAME: string;
+  RUNPOD_COMFY_SSH_PUBLIC_KEY: string;
+  RUNPOD_COMFY_LOCAL_STAGING_DIRECTORY: string;
+  RUNPOD_COMFY_CAPABILITY_REPORT: string;
+  RUNPOD_COMFY_MODEL_MANIFEST_SHA256: string;
+  RUNPOD_COMFY_SECRETS: {
+    apiKeyConfigured: boolean;
+    deploymentAuthConfigured: boolean;
+    masterSecretConfigured: boolean;
+    privateKeyConfigured: boolean;
+    source: string;
+  };
+  RUNPOD_COMFY_CONFIGURATION_ERRORS: string[];
+  RUNPOD_COMFY_ACTIVE_WORKSPACE: null | {
+    id: string;
+    state: string;
+    hourlyRate: number | null;
+    expiresAt: string | null;
+  };
 }
 
 export default function useSettings() {
@@ -90,6 +121,32 @@ export default function useSettings() {
     AWS_ARCHIVE_REGION: 'us-east-1',
     AWS_ARCHIVE_PREFIX: 'ai-toolkit',
     AWS_PROFILE_CONFIGURED: false,
+    RUNPOD_COMFY_ENABLED: false,
+    RUNPOD_COMFY_IMAGE_DIGEST: '',
+    RUNPOD_COMFY_GPU_IDS: 'NVIDIA H100 80GB HBM3,NVIDIA H100 PCIe',
+    RUNPOD_COMFY_MAX_HOURLY_RATE: '3.50',
+    RUNPOD_COMFY_DEFAULT_MAX_HOURS: '2',
+    RUNPOD_COMFY_ALLOWED_MAX_HOURS: '1,2,4,8',
+    RUNPOD_COMFY_IDLE_MINUTES: '60',
+    RUNPOD_COMFY_MIN_CONTAINER_DISK_GB: '100',
+    RUNPOD_COMFY_MAX_CONTAINER_DISK_GB: '200',
+    RUNPOD_COMFY_OUTPUT_ALLOWANCE_GB: '20',
+    RUNPOD_COMFY_CAPACITY_WAIT_MINUTES: '15',
+    RUNPOD_COMFY_MAX_ACTIVE: '1',
+    RUNPOD_COMFY_HF_SECRET_NAME: 'aitk_hf_read',
+    RUNPOD_COMFY_SSH_PUBLIC_KEY: '',
+    RUNPOD_COMFY_LOCAL_STAGING_DIRECTORY: '',
+    RUNPOD_COMFY_CAPABILITY_REPORT: '',
+    RUNPOD_COMFY_MODEL_MANIFEST_SHA256: '',
+    RUNPOD_COMFY_SECRETS: {
+      apiKeyConfigured: false,
+      deploymentAuthConfigured: false,
+      masterSecretConfigured: false,
+      privateKeyConfigured: false,
+      source: 'environment',
+    },
+    RUNPOD_COMFY_CONFIGURATION_ERRORS: [],
+    RUNPOD_COMFY_ACTIVE_WORKSPACE: null,
   });
   const [isSettingsLoaded, setIsLoaded] = useState(false);
   useEffect(() => {
@@ -139,6 +196,32 @@ export default function useSettings() {
           AWS_ARCHIVE_REGION: data.AWS_ARCHIVE_REGION || 'us-east-1',
           AWS_ARCHIVE_PREFIX: data.AWS_ARCHIVE_PREFIX || 'ai-toolkit',
           AWS_PROFILE_CONFIGURED: Boolean(data.AWS_PROFILE_CONFIGURED),
+          RUNPOD_COMFY_ENABLED: Boolean(data.RUNPOD_COMFY_ENABLED),
+          RUNPOD_COMFY_IMAGE_DIGEST: data.RUNPOD_COMFY_IMAGE_DIGEST || '',
+          RUNPOD_COMFY_GPU_IDS: data.RUNPOD_COMFY_GPU_IDS || 'NVIDIA H100 80GB HBM3,NVIDIA H100 PCIe',
+          RUNPOD_COMFY_MAX_HOURLY_RATE: data.RUNPOD_COMFY_MAX_HOURLY_RATE || '3.50',
+          RUNPOD_COMFY_DEFAULT_MAX_HOURS: data.RUNPOD_COMFY_DEFAULT_MAX_HOURS || '2',
+          RUNPOD_COMFY_ALLOWED_MAX_HOURS: data.RUNPOD_COMFY_ALLOWED_MAX_HOURS || '1,2,4,8',
+          RUNPOD_COMFY_IDLE_MINUTES: data.RUNPOD_COMFY_IDLE_MINUTES || '60',
+          RUNPOD_COMFY_MIN_CONTAINER_DISK_GB: data.RUNPOD_COMFY_MIN_CONTAINER_DISK_GB || '100',
+          RUNPOD_COMFY_MAX_CONTAINER_DISK_GB: data.RUNPOD_COMFY_MAX_CONTAINER_DISK_GB || '200',
+          RUNPOD_COMFY_OUTPUT_ALLOWANCE_GB: data.RUNPOD_COMFY_OUTPUT_ALLOWANCE_GB || '20',
+          RUNPOD_COMFY_CAPACITY_WAIT_MINUTES: data.RUNPOD_COMFY_CAPACITY_WAIT_MINUTES || '15',
+          RUNPOD_COMFY_MAX_ACTIVE: data.RUNPOD_COMFY_MAX_ACTIVE || '1',
+          RUNPOD_COMFY_HF_SECRET_NAME: data.RUNPOD_COMFY_HF_SECRET_NAME || 'aitk_hf_read',
+          RUNPOD_COMFY_SSH_PUBLIC_KEY: data.RUNPOD_COMFY_SSH_PUBLIC_KEY || '',
+          RUNPOD_COMFY_LOCAL_STAGING_DIRECTORY: data.RUNPOD_COMFY_LOCAL_STAGING_DIRECTORY || '',
+          RUNPOD_COMFY_CAPABILITY_REPORT: data.RUNPOD_COMFY_CAPABILITY_REPORT || '',
+          RUNPOD_COMFY_MODEL_MANIFEST_SHA256: data.RUNPOD_COMFY_MODEL_MANIFEST_SHA256 || '',
+          RUNPOD_COMFY_SECRETS: data.RUNPOD_COMFY_SECRETS || {
+            apiKeyConfigured: false,
+            deploymentAuthConfigured: false,
+            masterSecretConfigured: false,
+            privateKeyConfigured: false,
+            source: 'environment',
+          },
+          RUNPOD_COMFY_CONFIGURATION_ERRORS: data.RUNPOD_COMFY_CONFIGURATION_ERRORS || [],
+          RUNPOD_COMFY_ACTIVE_WORKSPACE: data.RUNPOD_COMFY_ACTIVE_WORKSPACE || null,
         });
         setIsLoaded(true);
       })

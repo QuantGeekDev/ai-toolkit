@@ -5,12 +5,27 @@ import { flushCache, getSecretStatus, getVertexSettings } from '@/server/setting
 import { buildPublicSettings, getSecretMutation } from '@/helpers/settingsSecrets';
 import { normalizeVertexSettings } from '@/helpers/vertexSettings';
 import { AWS_ARCHIVE_SETTING_KEYS, RUNPOD_SETTING_KEYS, runPodSecretStatus } from '../../../../cron/remote/settings';
+import {
+  getRunPodComfyConfig,
+  RUNPOD_COMFY_SETTING_KEYS,
+  runPodComfySecretStatus,
+  validateRunPodComfyConfig,
+} from '../../../../cron/comfy/settings';
+import { comfyWorkspaceDto } from '../../../../cron/comfy/dto';
 
 export async function GET() {
   try {
     const settings = await prisma.settings.findMany({
       where: {
-        key: { in: ['TRAINING_FOLDER', 'DATASETS_FOLDER', ...RUNPOD_SETTING_KEYS, ...AWS_ARCHIVE_SETTING_KEYS] },
+        key: {
+          in: [
+            'TRAINING_FOLDER',
+            'DATASETS_FOLDER',
+            ...RUNPOD_SETTING_KEYS,
+            ...AWS_ARCHIVE_SETTING_KEYS,
+            ...RUNPOD_COMFY_SETTING_KEYS,
+          ],
+        },
       },
     });
     const [hfToken, geminiApiKey, vertex] = await Promise.all([
@@ -25,6 +40,11 @@ export async function GET() {
       vertex,
     );
     const stored = Object.fromEntries(settings.map(row => [row.key, row.value]));
+    const comfyConfig = await getRunPodComfyConfig();
+    const activeWorkspace = await prisma.comfyWorkspace.findFirst({
+      where: { active_lease_key: 'global' },
+      orderBy: { created_at: 'desc' },
+    });
     const remote = Object.fromEntries(
       RUNPOD_SETTING_KEYS.map(key => [key, process.env[key]?.trim() || stored[key] || '']),
     );
@@ -36,6 +56,12 @@ export async function GET() {
       ...Object.fromEntries(AWS_ARCHIVE_SETTING_KEYS.map(key => [key, process.env[key]?.trim() || stored[key] || ''])),
       AWS_ARCHIVE_ENABLED: process.env.AI_TOOLKIT_AWS_ARCHIVE_ENABLED === '1',
       AWS_PROFILE_CONFIGURED: Boolean(process.env.AWS_PROFILE?.trim()),
+      ...Object.fromEntries(RUNPOD_COMFY_SETTING_KEYS.map(key => [key, process.env[key]?.trim() || stored[key] || ''])),
+      RUNPOD_COMFY_ENABLED: comfyConfig.enabled,
+      RUNPOD_COMFY_SECRETS: runPodComfySecretStatus(),
+      RUNPOD_COMFY_CONFIGURATION_ERRORS: validateRunPodComfyConfig(comfyConfig),
+      RUNPOD_COMFY_ACTIVE_WORKSPACE: activeWorkspace ? comfyWorkspaceDto(activeWorkspace) : null,
+      RUNPOD_COMFY_MODEL_MANIFEST_SHA256: comfyConfig.modelManifestSha256,
     });
   } catch (error) {
     return NextResponse.json({ error: 'Failed to fetch settings' }, { status: 500 });
@@ -101,6 +127,20 @@ export async function POST(request: Request) {
       }
     }
     for (const key of AWS_ARCHIVE_SETTING_KEYS) {
+      const value = body[key];
+      if (typeof value !== 'string' || process.env[key]?.trim()) continue;
+      if (!value.trim()) operations.push(prisma.settings.deleteMany({ where: { key } }));
+      else {
+        operations.push(
+          prisma.settings.upsert({
+            where: { key },
+            update: { value: value.trim() },
+            create: { key, value: value.trim() },
+          }),
+        );
+      }
+    }
+    for (const key of RUNPOD_COMFY_SETTING_KEYS) {
       const value = body[key];
       if (typeof value !== 'string' || process.env[key]?.trim()) continue;
       if (!value.trim()) operations.push(prisma.settings.deleteMany({ where: { key } }));

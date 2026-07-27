@@ -1,0 +1,38 @@
+{
+  "checkedAt": "2026-07-27T14:28:42.739587+00:00",
+  "encryptedPodLocalVolume": {
+    "adopted": false,
+    "reason": "Container-only storage retained; no verified encrypted zero-network-volume API contract."
+  },
+  "huggingFace": {
+    "files": [
+      "diffusion_models/krea2_turbo_bf16.safetensors",
+      "text_encoders/qwen3vl_4b_bf16.safetensors",
+      "vae/qwen_image_vae.safetensors"
+    ],
+    "repository": "Comfy-Org/Krea-2",
+    "revision": "952f49d49653cb42e7d6cf7cbfad74738073ec7d"
+  },
+  "runpod": {
+    "inputContractSource": {
+      "commit": "2e2df89e1fcb6a16632017a14385552005913732",
+      "file": "internal/api/graphql.go",
+      "repository": "runpod/runpodctl"
+    },
+    "inputFields": [
+      "cloudType",
+      "containerDiskInGb",
+      "gpuTypeId",
+      "imageName",
+      "ports",
+      "terminateAfter",
+      "volumeInGb"
+    ],
+    "secureH100GpuTypes": [
+      "NVIDIA H100 80GB HBM3",
+      "NVIDIA H100 NVL",
+      "NVIDIA H100 PCIe"
+    ]
+  },
+  "schemaVersion": 1
+}

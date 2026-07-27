@@ -249,6 +249,33 @@ const samplingSettings = (process: JobProcess) => {
   };
 };
 
+const cloudJobConfig = (jobConfig: string): string => {
+  const parsed = parseJobConfig(jobConfig);
+  const process = parsed.config?.process?.[0];
+  if (process?.model?.arch?.toLowerCase() !== 'krea2') {
+    throw new ComfyUiExportError('Only Krea 2 training jobs can be sent to this ComfyUI workflow.');
+  }
+  return JSON.stringify({
+    ...parsed,
+    config: {
+      ...parsed.config,
+      process: [
+        {
+          ...process,
+          model: { ...process.model, name_or_path: 'krea-ai/krea-2-turbo' },
+          sample: {
+            ...process.sample,
+            seed: finiteNumber(process.sample?.seed, 42),
+            sample_steps: 8,
+            guidance_scale: 1,
+          },
+        },
+        ...(parsed.config?.process?.slice(1) || []),
+      ],
+    },
+  });
+};
+
 export const buildKrea2Workflow = ({
   jobName,
   checkpoint,
@@ -446,6 +473,13 @@ export const buildKrea2ComparisonWorkflow = ({
     version: 0.4,
   };
 };
+
+export const buildCloudKrea2Workflow = (options: Parameters<typeof buildKrea2Workflow>[0]): Krea2Workflow =>
+  buildKrea2Workflow({ ...options, jobConfig: cloudJobConfig(options.jobConfig) });
+
+export const buildCloudKrea2ComparisonWorkflow = (
+  options: Parameters<typeof buildKrea2ComparisonWorkflow>[0],
+): Krea2Workflow => buildKrea2ComparisonWorkflow({ ...options, jobConfig: cloudJobConfig(options.jobConfig) });
 
 const assertFile = async (filePath: string, label: string) => {
   try {

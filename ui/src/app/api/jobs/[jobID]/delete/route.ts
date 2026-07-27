@@ -4,7 +4,7 @@ import { getTrainingFolder } from '@/server/settings';
 import path from 'path';
 import fs from 'fs';
 
-export async function GET(request: NextRequest, { params }: { params: { jobID: string } }) {
+export async function GET(request: NextRequest, { params }: { params: Promise<{ jobID: string }> }) {
   const { jobID } = await params;
 
   const job = await prisma.job.findUnique({
@@ -20,6 +20,22 @@ export async function GET(request: NextRequest, { params }: { params: { jobID: s
       { status: 409 },
     );
   }
+  const activeWorkspace = await prisma.comfyWorkspace.findFirst({
+    where: {
+      job_id: jobID,
+      state: { notIn: ['terminated', 'expired', 'failed_confirmed_absent'] },
+    },
+  });
+  if (activeWorkspace) {
+    return NextResponse.json(
+      {
+        error:
+          'Terminate the temporary ComfyUI workspace and wait for confirmed provider deletion before deleting this job.',
+        workspaceId: activeWorkspace.id,
+      },
+      { status: 409 },
+    );
+  }
 
   const trainingRoot = await getTrainingFolder();
   const trainingFolder = path.join(trainingRoot, job.name);
@@ -27,9 +43,17 @@ export async function GET(request: NextRequest, { params }: { params: { jobID: s
   // force:true makes this a no-op if the folder is already gone
   await fs.promises.rm(trainingFolder, { recursive: true, force: true });
 
-  await prisma.job.delete({
-    where: { id: jobID },
-  });
+  await prisma.$transaction([
+    prisma.comfyWorkspace.deleteMany({
+      where: {
+        job_id: jobID,
+        state: { in: ['terminated', 'expired', 'failed_confirmed_absent'] },
+      },
+    }),
+    prisma.job.delete({
+      where: { id: jobID },
+    }),
+  ]);
 
   return NextResponse.json(job);
 }

@@ -43,6 +43,7 @@ model Job {
   sample_now        Boolean           @default(false) // if true, the job will be sampled on the next step
   execution_target  String            @default("local") // local | runpod_serverless
   remote_executions RemoteExecution[]
+  comfy_workspaces  ComfyWorkspace[]
 
   @@index([status])
   @@index([gpu_ids])
@@ -92,4 +93,85 @@ model RemoteExecution {
   @@unique([job_id, attempt])
   @@index([state])
   @@index([job_id])
+}
+
+model ComfyWorkspace {
+  id                       String                   @id @default(uuid())
+  job_id                   String
+  job                      Job                      @relation(fields: [job_id], references: [id], onDelete: Restrict)
+  request_key              String                   @unique
+  managed_pod_name         String                   @unique
+  provider_pod_id          String?                  @unique
+  active_lease_key         String?                  @unique
+  state                    String                   @default("requested")
+  phase                    String                   @default("")
+  export_mode              String
+  selected_checkpoint      String?
+  preserve_outputs         Boolean                  @default(true)
+  workflow_name            String                   @default("")
+  checkpoint_count         Int                      @default(0)
+  manifest_sha256          String                   @default("")
+  model_manifest_sha256    String                   @default("")
+  requested_gpu            String                   @default("NVIDIA H100")
+  actual_gpu               String?
+  container_disk_gb        Int                      @default(100)
+  hourly_rate              Float?
+  estimated_max_cost       Float?
+  max_runtime_minutes      Int
+  idle_timeout_minutes     Int                      @default(60)
+  provider_started_at      DateTime?
+  ready_at                 DateTime?
+  expires_at               DateTime?
+  last_user_activity_at    DateTime?
+  last_queue_activity_at   DateTime?
+  last_remote_contact_at   DateTime?
+  bytes_planned            BigInt                   @default(0)
+  bytes_transferred        BigInt                   @default(0)
+  public_url               String?
+  ssh_host                 String?
+  ssh_port                 Int?
+  ssh_host_fingerprint     String?
+  output_sync_state        String                   @default("pending")
+  output_sync_error        String?
+  output_sync_requested_at DateTime?
+  termination_mode         String?
+  termination_reason       String?
+  termination_requested_at DateTime?
+  terminated_at            DateTime?
+  error_code               String?
+  error_message            String?
+  lease_owner              String?
+  lease_expires_at         DateTime?
+  remote_status_json       String                   @default("{}")
+  artifacts                ComfyWorkspaceArtifact[]
+  created_at               DateTime                 @default(now())
+  updated_at               DateTime                 @updatedAt
+
+  @@index([state])
+  @@index([job_id])
+  @@index([lease_expires_at])
+}
+
+model ComfyWorkspaceArtifact {
+  id                   String         @id @default(uuid())
+  workspace_id         String
+  workspace            ComfyWorkspace @relation(fields: [workspace_id], references: [id], onDelete: Cascade)
+  role                 String
+  display_name         String
+  local_path           String
+  remote_relative_path String
+  byte_length          BigInt
+  sha256               String
+  transferred_bytes    BigInt         @default(0)
+  transfer_state       String         @default("pending")
+  attempts             Int            @default(0)
+  source_size          BigInt
+  source_mtime_ms      BigInt
+  error_message        String?
+  created_at           DateTime       @default(now())
+  updated_at           DateTime       @updatedAt
+
+  @@unique([workspace_id, remote_relative_path])
+  @@index([workspace_id])
+  @@index([transfer_state])
 }
